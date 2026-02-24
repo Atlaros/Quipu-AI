@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+
+    env:
+      # Variables mock para que los tests no requieran secrets reales
+      SUPABASE_URL: "https://mock.supabase.co"
+      SUPABASE_KEY: "mock-key-for-ci"
+      GOOGLE_API_KEY: "mock-key-for-ci"
+      WHATSAPP_TOKEN: "mock-token"
+      WHATSAPP_PHONE_ID: "123456789"
+      WHATSAPP_VERIFY_TOKEN: "test-verify-token"
+      WHATSAPP_APP_SECRET: ""
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Lint (ruff)
+        run: uv run ruff check app/ tests/
+
+      - name: Tests
+        run: uv run pytest tests/ -v --tb=short

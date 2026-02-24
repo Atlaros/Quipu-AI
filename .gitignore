@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+wheels/
+*.egg
+
+# Virtual Environment
+.venv/
+venv/
+
+# Environment Variables (NUNCA commitear secretos)
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Logs
+*.log
+ngrok_url.log
+
+# Agent configs (local)
+.agent/
+.local/
+PROGRESO.md
+PROMPT_SESION.md
+
+# Local tools (binarios)
+ngrok
+
+# Reports generados
+reports/
