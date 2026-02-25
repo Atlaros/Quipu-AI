@@ -2,10 +2,10 @@ services:
   # Web Service principal de la API
   - type: web
     name: quipu-ai
-    env: docker
+    runtime: docker
     region: ohio
     plan: free
-    branch: main
+    branch: master
     healthCheckPath: /healthz
     envVars:
       - key: SUPABASE_URL
