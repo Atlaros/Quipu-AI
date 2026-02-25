@@ -3,11 +3,11 @@
 StateGraph con patrón ReAct: el LLM decide cuándo llamar tools
 y cuándo responder directamente.
 
-Incluye estrategia de Fallback robusta:
-1. Intenta `gemini-2.0-flash`.
-2. Si falla (quota/error), intenta `gemini-1.5-flash`.
-3. Si falla, intenta `gemini-1.5-pro`.
-4. Rota API Keys para cada modelo.
+Estrategia de LLM (en cascada):
+1. Groq llama-3.1-8b-instant  — rápido, alta cuota free.
+2. Groq llama-3.3-70b-versatile — más capaz, menor cuota.
+3. Groq mixtral-8x7b-32768     — último recurso Groq.
+4. OpenRouter (si tiene key)   — fallback externo multi-modelo.
 """
 
 import structlog
@@ -17,167 +17,196 @@ from langgraph.prebuilt import ToolNode, tools_condition
 
 from app.agent.state import AgentState
 from app.core.config import settings
+from app.tools.alerta_stock_bajo import alerta_stock_bajo
+from app.tools.buscar_web import buscar_web
+from app.tools.calcular_descuento import calcular_descuento
+from app.tools.consultar_deudas import consultar_deudas
 from app.tools.consultar_inventario import consultar_inventario
 from app.tools.consultar_metricas import consultar_metricas
+from app.tools.enviar_catalogo import enviar_catalogo
+from app.tools.exportar_reporte import exportar_reporte
+from app.tools.festividades_proximas import festividades_proximas
 from app.tools.generar_reporte_ventas import generar_reporte_ventas
+from app.tools.recomendacion_personalizada import recomendacion_personalizada
 from app.tools.registrar_cliente import registrar_cliente
+from app.tools.registrar_deuda import registrar_deuda
 from app.tools.registrar_venta import registrar_venta
 
 logger = structlog.get_logger()
 
 # --- Tools disponibles para el agente ---
 TOOLS = [
+    # Ventas e inventario (core)
     registrar_venta,
     consultar_inventario,
     consultar_metricas,
     generar_reporte_ventas,
     registrar_cliente,
+    # Nuevas herramientas
+    buscar_web,
+    alerta_stock_bajo,
+    registrar_deuda,
+    consultar_deudas,
+    festividades_proximas,
+    calcular_descuento,
+    exportar_reporte,
+    enviar_catalogo,
+    recomendacion_personalizada,
 ]
 
-# --- Modelos de fallback (en orden de prioridad) ---
-# --- Modelos de fallback (en orden de prioridad) ---
-FALLBACK_MODELS = [
-    "llama-3.3-70b-versatile",
-    "llama-3.1-8b-instant",
-    "mixtral-8x7b-32768",
+# --- Modelos Groq en orden de prioridad ---
+# qwen3-32b: el más capaz del free tier (Preview), soporta tool calling
+# llama-3.3-70b: production, muy capaz
+# llama-3.1-8b: production, mayor cuota RPM, último recurso Groq
+GROQ_MODELS = [
+    "qwen/qwen3-32b",           # Más avanzado gratis, 32B con razonamiento
+    "llama-3.3-70b-versatile",  # Production, capaz y confiable
+    "llama-3.1-8b-instant",     # Mayor cuota RPM, último recurso
+]
+
+# --- Modelos OpenRouter de fallback (en orden) ---
+OPENROUTER_MODELS = [
+    "deepseek/deepseek-v3-0324:free",   # Uno de los mejores modelos free, herramientas
+    "nvidia/llama-3.1-nemotron-70b-instruct:free",  # Muy capaz, free
+    "openrouter/auto",                  # Router inteligente de OR como último recurso
 ]
 
 # --- System Prompt del agente ---
-SYSTEM_PROMPT = """Eres el asesor virtual de nuestra tienda de Ropa y Calzado de moda.
-Tu objetivo es atender por WhatsApp de forma ULTRA RÁPIDA, persuasiva y concisa.
+SYSTEM_PROMPT = """Eres el asesor virtual de una tienda de Ropa y Calzado de moda.
+Atiendes por WhatsApp de forma ULTRA RÁPIDA, persuasiva y concisa.
 
-REGLAS DE ORO (CRÍTICO):
-1. BREVEDAD: Tus respuestas deben tener MÁXIMO 1 o 2 líneas. NUNCA escribas párrafos. Responde al grano.
-2. CERO FORMALIDADES: No digas "Estimado cliente" ni "Quedo atento". Usa tono fresco y emojis (👕👟).
-3. VARIANTES OBLIGATORIAS: Si piden ropa/calzado y NO te dicen talla y/o color, PREGUNTA PRIMERO antes de consultar el stock.
-   - Ej: "Hola, ¿hay Adidas Superstar?" -> Tú: "¡Hola! Claro, ¿en qué talla las buscas? 👟"
-4. PERSUASIÓN: Si das un precio, incluye un llamado a la acción. Ej: "Están a S/120. ¿Te separo un par?"
-5. REPORTES GRÁFICOS: Si usas la herramienta generar_reporte_ventas, esta te devolverá un texto como "[IMAGE:/ruta] texto". Tu respuesta FINAL al usuario DEBE comenzar EXACTAMENTE con ese bloque "[IMAGE:/ruta]". Es crítico, no pongas ninguna palabra antes.
+REGLAS DE ORO:
+1. BREVEDAD: NUNCA escribas párrafos. Máximo 2-3 líneas + resultado de la tool.
+2. TONO: Fresco, directo, con emojis (👕👟💰). Sin formalidades.
+3. VARIANTES: Si piden calzado/ropa sin talla o color → PREGUNTA primero.
+   - Ej: "¿Hay Nike Air?" → "¡Claro! ¿en qué talla y color? 👟"
+4. PERSUASIÓN: Precio → llamado a la acción. Ej: "S/120. ¿Te lo separo?"
+5. REPORTES: Si usas generar_reporte_ventas → tu respuesta DEBE empezar con "[IMAGE:/ruta]".
 
-HERRAMIENTAS:
-1. registrar_venta: Solo cuando el cliente dice expresamente "lo compro", "apúntamelo", etc. Requiere Talla, Color, Precio.
-2. consultar_inventario: Usa esto solo cuando ya sepas la talla que buscan.
-3. consultar_metricas / generar_reporte_ventas: Solo para consultar métricas cuando los jefes te lo pidan.
+HERRAMIENTAS — cuándo usarlas:
+Core:
+- registrar_venta: cliente confirma compra explícitamente ("lo llevo", "apúntalo").
+- consultar_inventario: cuando ya sabes talla y color que buscan.
+- registrar_cliente: cuando quiere guardar sus datos.
+- consultar_metricas: el dueño pide métricas/estadísticas de ventas.
+- generar_reporte_ventas: el dueño pide reporte gráfico.
+
+Nuevas:
+- buscar_web: TIENES INTERNET. DEBES usar esta tool obligatoriamente si te piden buscar tendencias, precios de competencia, noticias o info del año actual. NO digas que no puedes.
+- alerta_stock_bajo: revisar qué productos están por acabarse.
+- registrar_deuda: cliente se lleva mercadería a crédito o queda de pagar.
+- consultar_deudas: ver quién debe y cuánto.
+- festividades_proximas: sugerir promos según fechas especiales próximas.
+- calcular_descuento: calcular precio con descuento al instante.
+- exportar_reporte: generar CSV con historial de ventas.
+- enviar_catalogo: mostrar productos disponibles cuando piden "qué hay".
+- recomendacion_personalizada: sugerir productos según historial del cliente.
 """
 
-# --- Retry config para rate limits ---
-_RETRY_KEYWORDS = ["429", "rate limit", "too many requests"]
+
+# --- Retry keywords para detectar rate limits ---
+_RETRY_KEYWORDS = ["429", "rate limit", "too many requests", "quota", "resource exhausted"]
 
 
 def _is_rate_limit_error(exc: BaseException) -> bool:
-    """Detecta si la excepción es un rate limit de Groq."""
-    error_msg = str(exc).lower()
-    return any(kw.lower() in error_msg for kw in _RETRY_KEYWORDS)
+    """Detecta si la excepción es un rate limit o quota excedida."""
+    return any(kw in str(exc).lower() for kw in _RETRY_KEYWORDS)
 
 
 def build_agent_graph() -> StateGraph:
     """Construye y compila el grafo del agente.
 
+    Cadena de fallback:
+    Groq (8b → 70b → mixtral) → OpenRouter (si hay key).
+
     Returns:
         El grafo compilado listo para invocar.
-
-    Architecture:
-        agent_node (LLM + tools) → tools_condition → tool_node → agent_node → END
     """
-    # 1. API Keys disponibles
-    api_key = settings.groq_api_key
+    groq_api_key = settings.groq_api_key
+    openrouter_api_key = settings.openrouter_api_key
 
-    def _create_llm(model: str) -> ChatGroq:
-        """Crea instancia del LLM con un modelo y key específicos."""
-        llm = ChatGroq(
-            model=model,
-            api_key=api_key,
-            temperature=0.3,
-        )
-        return llm.bind_tools(TOOLS)
-
-    # 2. LLM invoke con estrategia de Fallback + Rotación de Keys
     def _invoke_llm_with_fallback(messages: list) -> object:
-        """Invoca el LLM probando modelos y keys en cascada.
-
-        Estrategia:
-        Para cada modelo en FALLBACK_MODELS:
-            Intenta invocar.
-            Si éxito -> retorna.
-            Si rate limit -> prueba siguiente modelo.
+        """Invoca el LLM en cascada: Groq primero, OpenRouter si all fallan.
 
         Args:
-            messages: Lista de mensajes.
+            messages: Lista de mensajes LangChain.
 
         Returns:
             Respuesta del LLM.
 
         Raises:
-            Exception: Si todos los modelos fallan.
+            RuntimeError: Si todos los modelos fallan.
         """
         last_error: Exception | None = None
 
-        if not api_key:
-            raise ValueError("Groq API Key no configurada, revisar variables de entorno.")
-
-        for model in FALLBACK_MODELS:
-            try:
-                # logger.info("trying_llm", model=model)
-                llm_with_tools = _create_llm(model)
-                result = llm_with_tools.invoke(messages)
-                
-                if model != FALLBACK_MODELS[0]:
-                    logger.info("fallback_success", model=model)
-                
-                return result
-
-            except Exception as exc:
-                if _is_rate_limit_error(exc):
-                    logger.warning(
-                        "llm_rate_limit",
+        # 1. Intentar modelos Groq en cascada
+        if groq_api_key:
+            for model in GROQ_MODELS:
+                try:
+                    llm = ChatGroq(
                         model=model,
-                        error=str(exc)[:100]
-                    )
+                        api_key=groq_api_key,
+                        temperature=0.3,
+                    ).bind_tools(TOOLS)
+                    result = llm.invoke(messages)
+                    if model != GROQ_MODELS[0]:
+                        logger.info("groq_fallback_success", model=model)
+                    return result
+                except Exception as exc:
+                    if _is_rate_limit_error(exc):
+                        logger.warning("llm_rate_limit", model=model, error=str(exc)[:100])
+                    else:
+                        logger.error("llm_error", model=model, error=str(exc)[:100])
                     last_error = exc
                     continue
-                
-                # Si es otro error (ej. invalid argument), quizás el modelo no soporta algo
-                # Logueamos y probamos siguiente (best effort)
-                logger.error("llm_error", model=model, error=str(exc))
-                last_error = exc
-                continue
+        else:
+            logger.warning("groq_api_key_missing")
 
-        # Todo falló
-        logger.error("all_models_failed", attempts=len(FALLBACK_MODELS))
+        # 2. Fallback a OpenRouter (varios modelos en cascada)
+        if openrouter_api_key:
+            for or_model in OPENROUTER_MODELS:
+                try:
+                    from langchain_openai import ChatOpenAI
+                    or_llm = ChatOpenAI(
+                        model=or_model,
+                        openai_api_key=openrouter_api_key,
+                        openai_api_base="https://openrouter.ai/api/v1",
+                        temperature=0.3,
+                    ).bind_tools(TOOLS)
+                    result = or_llm.invoke(messages)
+                    logger.info("openrouter_success", model=or_model)
+                    return result
+                except Exception as exc:
+                    logger.error("openrouter_failed", model=or_model, error=str(exc)[:100])
+                    last_error = exc
+                    continue
+
+        logger.error("all_models_failed")
         if last_error:
             raise last_error
-        msg = "No se pudo generar respuesta con ningún modelo."
-        raise RuntimeError(msg)
+        raise RuntimeError("No se pudo generar respuesta con ningún modelo.")
 
-    # 4. Nodo agente
     def agent_node(state: AgentState) -> AgentState:
-        """Nodo que invoca el LLM."""
+        """Nodo que invoca el LLM con system prompt inyectado."""
         from langchain_core.messages import SystemMessage
 
         messages = state["messages"]
-
-        # Inyectar system prompt
         if not messages or not isinstance(messages[0], SystemMessage):
             messages = [SystemMessage(content=SYSTEM_PROMPT)] + list(messages)
 
         response = _invoke_llm_with_fallback(messages)
         return {"messages": [response]}
 
-    # 5. Nodo tools
     tool_node = ToolNode(tools=TOOLS)
 
-    # 6. Construir grafo
     graph = StateGraph(AgentState)
     graph.add_node("agent", agent_node)
     graph.add_node("tools", tool_node)
-
-    # 7. Edges
     graph.set_entry_point("agent")
     graph.add_conditional_edges("agent", tools_condition)
     graph.add_edge("tools", "agent")
 
-    logger.info("agent_graph_built", fallback_models=FALLBACK_MODELS)
-
+    logger.info("agent_graph_built", primary=GROQ_MODELS[0], fallback_models=GROQ_MODELS[1:])
     return graph.compile()
 
 

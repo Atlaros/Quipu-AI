@@ -140,8 +140,8 @@ quipu-ai/
 |---|---|---|
 | `GET` | `/health` | Health check |
 | `POST` | `/api/v1/chat/` | Chat directo con el agente |
-| `GET` | `/webhook/` | Verificación de Meta |
-| `POST` | `/webhook/` | Recibir mensajes de WhatsApp |
+| `GET` | `/api/v1/webhook/` | Verificación de Meta |
+| `POST` | `/api/v1/webhook/` | Recibir mensajes de WhatsApp |
 | `POST` | `/api/v1/ventas/` | Registrar venta |
 | `GET` | `/api/v1/ventas/` | Listar ventas |
 | `POST` | `/api/v1/productos/` | Crear producto (con variantes) |

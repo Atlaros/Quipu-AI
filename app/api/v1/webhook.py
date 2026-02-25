@@ -14,7 +14,7 @@ import hmac
 import json
 
 import structlog
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse
 
 from app.agent.graph import agent
@@ -97,25 +97,24 @@ async def verify_webhook(
 
 
 @router.post("/")
-async def receive_message(request: Request) -> dict:
-    """Recibe mensajes de WhatsApp y responde con el agente.
+async def receive_message(request: Request, background_tasks: BackgroundTasks) -> dict:
+    """Recibe mensajes de WhatsApp y responde con el agente en background.
 
     Flujo:
     1. Verificar firma HMAC-SHA256 de Meta.
-    2. Parsear mensaje (texto, audio, o imagen).
-    3. Si es audio → transcribir con Gemini.
-    4. Si es imagen → procesar con Gemini Vision.
-    5. Cargar historial de conversación.
-    6. Invocar agente con contexto.
-    7. Guardar mensajes en historial.
-    8. Responder vía WhatsApp.
+    2. Deduplicar por message_id (Redis TTL 5min) — ignora reintentos de Meta.
+    3. Retornar 200 OK inmediatamente a Meta.
+    4. Procesar mensaje + invocar agente + responder en background task.
 
     Args:
         request: Request de FastAPI con el body JSON.
+        background_tasks: FastAPI BackgroundTasks para procesamiento async.
 
     Returns:
-        Siempre {"status": "ok"} — Meta necesita 200 para no reintentar.
+        Siempre {\"status\": \"ok\"} — Meta necesita 200 para no reintentar.
     """
+    from app.services.redis_service import RedisService
+
     # 1. Verificar firma de Meta
     body = await request.body()
     signature = request.headers.get("X-Hub-Signature-256", "")
@@ -126,25 +125,48 @@ async def receive_message(request: Request) -> dict:
 
     # 2. Parsear payload
     payload = json.loads(body)
-
     message_data = wa_service.parse_message(payload)
     if not message_data:
         return {"status": "ok"}
 
+    message_id = message_data["message_id"]
+
+    # 3. Deduplicación: ignorar reintentos de Meta (TTL = 5 minutos)
+    redis_svc = RedisService()
+    dedup_key = f"msg_processed:{message_id}"
+    already_processed = await redis_svc.get(dedup_key)
+    if already_processed:
+        logger.info("webhook_duplicate_skipped", message_id=message_id)
+        return {"status": "ok"}
+
+    # Marcar como procesado ANTES de encolar (evita race condition)
+    await redis_svc.set(dedup_key, "1", expire=300)
+
+    # 4. Encolar procesamiento en background y retornar 200 inmediatamente
+    background_tasks.add_task(_process_message, message_data)
+    return {"status": "ok"}
+
+
+async def _process_message(message_data: dict) -> None:
+    """Procesa el mensaje, invoca el agente y envía la respuesta por WhatsApp.
+
+    Se ejecuta en background para no bloquear el webhook y evitar reintentos de Meta.
+
+    Args:
+        message_data: Diccionario con los datos del mensaje parseado.
+    """
     phone = message_data["phone"]
     msg_type = message_data.get("type", "text")
     message_id = message_data["message_id"]
     name = message_data.get("name", "")
 
-    # 3. Marcar como leído
+    # Marcar mensaje como leído
     await wa_service.mark_as_read(message_id)
 
-    # 4. Procesar según tipo de mensaje
+    # Procesar según tipo de mensaje
     if msg_type == "audio":
-        # Transcribir audio con Gemini
         media_id = message_data.get("media_id", "")
         mime_type = message_data.get("mime_type", "audio/ogg")
-
         logger.info("webhook_audio_received", phone=phone, media_id=media_id)
 
         audio_bytes = await wa_service.download_media(media_id)
@@ -152,26 +174,23 @@ async def receive_message(request: Request) -> dict:
             await wa_service.send_message(
                 to=phone, text="⚠️ No pude descargar el audio. Intenta de nuevo."
             )
-            return {"status": "ok"}
+            return
 
         from app.services.media_service import MediaService
-        media_svc = MediaService()
-        text = await media_svc.transcribe_audio(audio_bytes, mime_type)
+        text = await MediaService().transcribe_audio(audio_bytes, mime_type)
 
         if not text:
             await wa_service.send_message(
                 to=phone, text="⚠️ No pude entender el audio. ¿Puedes escribirlo?"
             )
-            return {"status": "ok"}
+            return
 
         logger.info("webhook_audio_transcribed", phone=phone, text=text[:50])
 
     elif msg_type == "image":
-        # Procesar imagen con Gemini Vision
         media_id = message_data.get("media_id", "")
         mime_type = message_data.get("mime_type", "image/jpeg")
         caption = message_data.get("text", "")
-
         logger.info("webhook_image_received", phone=phone, media_id=media_id)
 
         image_bytes = await wa_service.download_media(media_id)
@@ -179,28 +198,21 @@ async def receive_message(request: Request) -> dict:
             await wa_service.send_message(
                 to=phone, text="⚠️ No pude descargar la imagen. Intenta de nuevo."
             )
-            return {"status": "ok"}
+            return
 
         from app.services.media_service import MediaService
-        media_svc = MediaService()
-        description = await media_svc.process_image(image_bytes, mime_type)
+        description = await MediaService().process_image(image_bytes, mime_type)
 
         if not description:
             await wa_service.send_message(
                 to=phone, text="⚠️ No pude procesar la imagen. ¿Puedes describir lo que ves?"
             )
-            return {"status": "ok"}
+            return
 
-        # Combinar caption (si hay) + descripción de la imagen
-        if caption:
-            text = f"{caption}\n\n[Imagen: {description}]"
-        else:
-            text = f"[El usuario envió una imagen: {description}]"
-
+        text = f"{caption}\n\n[Imagen: {description}]" if caption else f"[El usuario envió una imagen: {description}]"
         logger.info("webhook_image_processed", phone=phone, description=description[:50])
 
     else:
-        # Texto normal
         text = message_data.get("text", "")
 
     logger.info(
@@ -212,7 +224,6 @@ async def receive_message(request: Request) -> dict:
     )
 
     try:
-        # 4. Cargar historial de conversación
         from langchain_core.messages import AIMessage, HumanMessage
 
         history = await conversation_repo.get_history(phone)
@@ -223,18 +234,14 @@ async def receive_message(request: Request) -> dict:
             elif msg["role"] == "ai":
                 messages.append(AIMessage(content=msg["content"]))
 
-        # Agregar mensaje actual
         messages.append(HumanMessage(content=text))
 
-        # 5. Invocar agente con historial completo
         result = agent.invoke({"messages": messages})
 
-        # Extraer texto de la respuesta (puede ser string o lista)
         last_msg = result["messages"][-1]
         if isinstance(last_msg.content, str):
             response_text = last_msg.content
         elif isinstance(last_msg.content, list):
-            # Gemini a veces retorna lista de content parts
             response_text = " ".join(
                 part.get("text", "") for part in last_msg.content
                 if isinstance(part, dict) and "text" in part
@@ -242,7 +249,6 @@ async def receive_message(request: Request) -> dict:
         else:
             response_text = str(last_msg.content)
 
-        # 6. Guardar mensajes en historial
         await conversation_repo.save_message(phone, "human", text)
         await conversation_repo.save_message(phone, "ai", response_text)
 
@@ -253,30 +259,25 @@ async def receive_message(request: Request) -> dict:
             "Intenta de nuevo en unos segundos."
         )
 
-    # 7. Enviar respuesta (texto o imagen)
+    # Enviar respuesta (texto o imagen)
     if response_text.startswith("[IMAGE:"):
-        # Extraer path de la imagen y caption
         try:
             end_idx = response_text.find("]")
             if end_idx != -1:
                 image_path = response_text[7:end_idx]
-                caption = response_text[end_idx+1:].strip()
+                caption = response_text[end_idx + 1:].strip()
             else:
                 image_path = response_text.replace("[IMAGE:", "")
                 caption = ""
 
-            # Subir imagen a WhatsApp Media API
             media_id = await wa_service.upload_media(image_path)
             if media_id:
                 await wa_service.send_image(to=phone, media_id=media_id, caption=caption)
             else:
-                # Fallback: enviar caption como texto si falla upload
                 await wa_service.send_message(to=phone, text=caption or response_text)
         except (ValueError, OSError) as exc:
             logger.error("webhook_image_send_failed", error=str(exc))
             await wa_service.send_message(to=phone, text=response_text)
     else:
         await wa_service.send_message(to=phone, text=response_text)
-
-    return {"status": "ok"}
 

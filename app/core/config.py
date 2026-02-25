@@ -46,6 +46,10 @@ class Settings(BaseSettings):
     google_api_key: str = ""
     # Groq (Llama 3 / Whisper)
     groq_api_key: str | None = None
+    # OpenRouter (fallback multi-modelo)
+    openrouter_api_key: str | None = None
+    # Tavily (búsqueda web)
+    tavily_api_key: str | None = None
 
     @computed_field  # type: ignore[prop-decorator]
     @property
