@@ -29,6 +29,7 @@ from app.tools.festividades_proximas import festividades_proximas
 from app.tools.generar_reporte_ventas import generar_reporte_ventas
 from app.tools.recomendacion_personalizada import recomendacion_personalizada
 from app.tools.registrar_cliente import registrar_cliente
+from app.tools.registrar_compra_proveedor import registrar_compra_proveedor
 from app.tools.registrar_deuda import registrar_deuda
 from app.tools.registrar_venta import registrar_venta
 
@@ -52,6 +53,7 @@ TOOLS = [
     exportar_reporte,
     enviar_catalogo,
     recomendacion_personalizada,
+    registrar_compra_proveedor,
 ]
 
 # --- Modelos Groq en orden de prioridad ---
@@ -92,7 +94,7 @@ Core:
 - generar_reporte_ventas: el dueño pide reporte gráfico.
 
 Nuevas:
-- buscar_web: TIENES INTERNET. DEBES usar esta tool obligatoriamente si te piden buscar tendencias, precios de competencia, noticias o info del año actual. NO digas que no puedes.
+- buscar_web: TIENES INTERNET. DEBES usar esta tool obligatoriamente si te piden buscar tendencias, precios competencia, noticias o info externa. NO digas que no puedes.
 - alerta_stock_bajo: revisar qué productos están por acabarse.
 - registrar_deuda: cliente se lleva mercadería a crédito o queda de pagar.
 - consultar_deudas: ver quién debe y cuánto.
@@ -101,6 +103,7 @@ Nuevas:
 - exportar_reporte: generar CSV con historial de ventas.
 - enviar_catalogo: mostrar productos disponibles cuando piden "qué hay".
 - recomendacion_personalizada: sugerir productos según historial del cliente.
+- registrar_compra_proveedor: ÚSALA SOLO CUANDO EL DUEÑO COMPRA STOCK AL PROVEEDOR. Requiere nombre, cantidad y precio_venta. Si da precio costo/marca/color/talla, úsalos.
 """
 
 
