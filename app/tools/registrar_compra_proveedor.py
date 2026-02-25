@@ -111,7 +111,6 @@ def registrar_compra_proveedor(
             # EL PRODUCTO NO EXISTE -> CREARLO
             nuevo_prod = {
                 "nombre": nombre,
-                "descripcion": f"Ingresado por WhatsApp: {nombre} {variante_str}",
                 "precio_unitario": precio_venta,
             }
             if marca:
@@ -128,15 +127,12 @@ def registrar_compra_proveedor(
 
             nuevo_id = crear_result.data[0]["id"]
 
-            # Crear el inventario inicial
-            db.table("inventario").insert({
-                "producto_id": nuevo_id,
-                "cantidad_actual": cantidad,
-                "cantidad_minima": 2  # default razonable
-            }).execute()
+            # El trigger de la BD crea un registro en inventario por defecto (con 10).
+            # Lo actualizamos con la cantidad real recibida en la compra.
+            db.table("inventario").update({
+                "cantidad_actual": cantidad
+            }).eq("producto_id", nuevo_id).execute()
 
-            # También registrar el costo si se proporcionó (opcional, como futura tabla de gastos)
-            # Por ahora lo dejamos en logs
             logger.info("nuevo_producto_creado", producto_id=nuevo_id, costo=precio_costo)
 
             return (
