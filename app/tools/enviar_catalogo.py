@@ -10,7 +10,6 @@ from langchain_core.tools import tool
 
 from app.core.database import get_supabase_client
 from app.core.exceptions import DatabaseError
-from app.repositories.producto_repository import ProductoRepository
 
 logger = structlog.get_logger()
 
@@ -52,10 +51,21 @@ def enviar_catalogo(categoria: str = "") -> str:
         Catálogo formateado agrupado por categoría con precios y stock.
     """
     db = get_supabase_client()
-    producto_repo = ProductoRepository(db)
 
     try:
-        productos = producto_repo.buscar_catalogo(categoria, limit=20)
+        # Query directa (sync) — los repos son async, tools son sync
+        query = db.table("productos").select(
+            "nombre, marca, categoria, talla, color, precio_unitario,"
+            " inventario(cantidad_actual)"
+        )
+        if categoria:
+            query = query.or_(
+                f"nombre.ilike.%{categoria}%,"
+                f"marca.ilike.%{categoria}%,"
+                f"categoria.ilike.%{categoria}%"
+            )
+        result = query.eq("activo", True).limit(20).execute()
+        productos = result.data if result.data else []
 
         if not productos:
             msg = (
@@ -104,7 +114,8 @@ def enviar_catalogo(categoria: str = "") -> str:
 
                 alerta = " ⚠️" if stock <= 5 else ""
                 lines.append(
-                    f"  • {nombre}{variante}{marca} — S/{precio:.2f} | {stock} und.{alerta}"
+                    f"  • {nombre}{variante}{marca}"
+                    f" — S/{precio:.2f} | {stock} und.{alerta}"
                 )
 
             lines.append("")  # Línea vacía entre categorías

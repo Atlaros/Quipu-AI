@@ -279,7 +279,8 @@ class ProductoRepository:
         """
         try:
             query = self.db.table(self._table).select(
-                "nombre, marca, talla, color, precio_unitario, inventario(cantidad_actual)"
+                "nombre, marca, categoria, talla, color, precio_unitario,"
+                " inventario(cantidad_actual)"
             )
             if categoria:
                 query = query.or_(f"nombre.ilike.%{categoria}%,marca.ilike.%{categoria}%")
