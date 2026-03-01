@@ -100,8 +100,7 @@ def exportar_reporte(periodo: str = "semana") -> str:
             f"• {len(ventas)} transacciones\n"
             f"• Total: S/{total_acumulado:.2f}\n"
             f"• Archivo: `{csv_path}`\n\n"
-            f"💡 El archivo CSV está listo en el servidor. "
-            f"Puedes descargarlo desde la API: GET /api/v1/ventas/export"
+            f"💡 El archivo CSV está guardado en el servidor."
         )
 
     except DatabaseError as exc:

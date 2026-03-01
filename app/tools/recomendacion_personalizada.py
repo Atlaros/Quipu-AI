@@ -72,7 +72,7 @@ def recomendacion_personalizada(cliente_phone: str) -> str:
 
         sugerencias = (
             db.table("productos")
-            .select("nombre, marca, talla, color, precio_unitario, inventario(cantidad_actual)")
+            .select("id, nombre, marca, talla, color, precio_unitario, inventario(cantidad_actual)")
             .gte("precio_unitario", precio_min)
             .lte("precio_unitario", precio_max)
             .limit(8)

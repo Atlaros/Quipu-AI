@@ -138,7 +138,7 @@ class VentaRepository:
             logger.error("venta_delete_failed", venta_id=str(venta_id), error=str(exc))
             raise DatabaseError(operation="DELETE venta", detail=str(exc)) from exc
 
-    async def get_por_rango(
+    def get_por_rango(
         self,
         inicio: str,
         fin: str,

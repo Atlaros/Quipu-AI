@@ -133,6 +133,8 @@ def registrar_compra_proveedor(
                 nuevo_prod["talla"] = talla
             if color:
                 nuevo_prod["color"] = color
+            if categoria:
+                nuevo_prod["categoria"] = categoria
 
             crear_result = db.table("productos").insert(nuevo_prod).execute()
 

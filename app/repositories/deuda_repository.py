@@ -24,7 +24,7 @@ class DeudaRepository:
         self.db = db
         self._table = "deudas"
 
-    async def create(self, payload: dict) -> dict:
+    def create(self, payload: dict) -> dict:
         """Inserta una nueva deuda.
 
         Args:
@@ -44,7 +44,7 @@ class DeudaRepository:
             logger.error("deuda_create_failed", error=str(exc))
             raise DatabaseError(operation="INSERT deuda", detail=str(exc)) from exc
 
-    async def get_pendientes(self, cliente_nombre: str = "") -> list[dict]:
+    def get_pendientes(self, cliente_nombre: str = "") -> list[dict]:
         """Lista deudas pendientes, opcionalmente filtradas por cliente.
 
         Args:

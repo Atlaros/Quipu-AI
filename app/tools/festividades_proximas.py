@@ -147,7 +147,7 @@ def festividades_proximas(dias_anticipacion: int = 60) -> str:
     if not proximas:
         return (
             f"📅 No hay festividades destacadas en los próximos {dias_anticipacion} días.\n"
-            f"Moment perfecto para preparar stock para las que vienen."
+            f"Momento perfecto para preparar stock para las que vienen."
         )
 
     lines = [f"🗓️ **Festividades próximas (próximos {dias_anticipacion} días):**"]
