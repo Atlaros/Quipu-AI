@@ -1,12 +1,12 @@
 """Tool: Generar Reporte Visual de Ventas.
 
-Genera un gráfico de barras con las ventas de los últimos 7 días
-y lo sube a WhatsApp como imagen.
+Genera un gráfico de barras con las ventas de los últimos 7 días.
+Usa VentaRepository para acceso a datos.
 """
 
 import tempfile
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import matplotlib
@@ -15,6 +15,8 @@ import structlog
 from langchain_core.tools import tool
 
 from app.core.database import get_supabase_client
+from app.core.exceptions import DatabaseError
+from app.repositories.venta_repository import VentaRepository
 
 # Backend no interactivo para servidores sin display
 matplotlib.use("Agg")
@@ -46,7 +48,7 @@ def _generar_chart_ventas(ventas_por_dia: dict[str, float], output_path: str) ->
     bars = ax.bar(labels, montos, color="#4CAF50", edgecolor="#388E3C", width=0.6)
 
     # Agregar valores sobre las barras
-    for bar, monto in zip(bars, montos):
+    for bar, monto in zip(bars, montos, strict=True):
         if monto > 0:
             ax.text(
                 bar.get_x() + bar.get_width() / 2.0,
@@ -80,20 +82,14 @@ def generar_reporte_ventas() -> str:
         Ruta del archivo de imagen generado, o mensaje de error.
     """
     db = get_supabase_client()
+    venta_repo = VentaRepository(db)
 
     try:
-        now = datetime.now(tz=timezone.utc)
+        now = datetime.now(tz=UTC)
         start = (now - timedelta(days=7)).isoformat()
+        end = now.isoformat()
 
-        result = (
-            db.table("transacciones")
-            .select("monto_total, created_at")
-            .eq("tipo", "venta")
-            .gte("created_at", start)
-            .execute()
-        )
-
-        ventas = result.data if result.data else []
+        ventas = venta_repo.get_por_rango(start, end)
 
         # Agrupar por día
         ventas_por_dia: dict[str, float] = defaultdict(float)
@@ -135,6 +131,9 @@ def generar_reporte_ventas() -> str:
             f"total S/{total:.2f} en los últimos 7 días."
         )
 
+    except DatabaseError as exc:
+        logger.error("tool_generar_reporte_db_error", error=str(exc))
+        return f"❌ Error de base de datos: {exc.message}"
     except Exception as exc:
         logger.error("tool_generar_reporte_failed", error=str(exc))
-        return f"❌ Error al generar reporte: {str(exc)}"
+        return f"❌ Error al generar reporte: {exc!s}"

@@ -2,12 +2,14 @@
 
 Tool callable por el agente LangGraph para sugerir productos
 basándose en el historial de compras del cliente.
+Usa repositorios para acceso a datos.
 """
 
 import structlog
 from langchain_core.tools import tool
 
 from app.core.database import get_supabase_client
+from app.core.exceptions import DatabaseError
 
 logger = structlog.get_logger()
 
@@ -29,9 +31,13 @@ def recomendacion_personalizada(cliente_phone: str) -> str:
 
     try:
         # 1. Buscar cliente por teléfono
-        cliente_result = db.table("clientes").select(
-            "id, nombre"
-        ).eq("telefono", cliente_phone).limit(1).execute()
+        cliente_result = (
+            db.table("clientes")
+            .select("id, nombre")
+            .eq("telefono", cliente_phone)
+            .limit(1)
+            .execute()
+        )
 
         if not cliente_result.data:
             return "❌ No encontré historial de compras para este cliente."
@@ -41,17 +47,22 @@ def recomendacion_personalizada(cliente_phone: str) -> str:
         cliente_nombre = cliente.get("nombre", "el cliente")
 
         # 2. Obtener últimas 5 compras del cliente
-        compras = db.table("transacciones").select(
-            "producto_id, precio_unitario, descripcion"
-        ).eq("cliente_id", cliente_id).order(
-            "created_at", desc=True
-        ).limit(5).execute()
+        compras = (
+            db.table("transacciones")
+            .select("producto_id, precio_unitario, descripcion")
+            .eq("cliente_id", cliente_id)
+            .order("created_at", desc=True)
+            .limit(5)
+            .execute()
+        )
 
         if not compras.data:
             return f"❌ {cliente_nombre} no tiene compras registradas aún."
 
-        # 3. Obtener precios promedio de compras para el rango de búsqueda
-        precios = [float(c.get("precio_unitario", 0)) for c in compras.data if c.get("precio_unitario")]
+        # 3. Calcular rango de precios para recomendaciones
+        precios = [
+            float(c.get("precio_unitario", 0)) for c in compras.data if c.get("precio_unitario")
+        ]
         precio_promedio = sum(precios) / len(precios) if precios else 0
         precio_min = precio_promedio * 0.7
         precio_max = precio_promedio * 1.4
@@ -59,12 +70,14 @@ def recomendacion_personalizada(cliente_phone: str) -> str:
         # 4. Buscar productos similares con stock en ese rango de precio
         productos_ids_comprados = [c["producto_id"] for c in compras.data if c.get("producto_id")]
 
-        sugerencias = db.table("productos").select(
-            "nombre, marca, talla, color, precio_unitario, "
-            "inventario(cantidad_actual)"
-        ).gte("precio_unitario", precio_min).lte(
-            "precio_unitario", precio_max
-        ).limit(8).execute()
+        sugerencias = (
+            db.table("productos")
+            .select("nombre, marca, talla, color, precio_unitario, inventario(cantidad_actual)")
+            .gte("precio_unitario", precio_min)
+            .lte("precio_unitario", precio_max)
+            .limit(8)
+            .execute()
+        )
 
         # Filtrar: con stock, no comprados antes
         recomendados = []
@@ -112,6 +125,9 @@ def recomendacion_personalizada(cliente_phone: str) -> str:
         )
         return "\n".join(lines)
 
+    except DatabaseError as exc:
+        logger.error("tool_recomendacion_db_error", error=str(exc))
+        return f"❌ Error de base de datos: {exc.message}"
     except Exception as exc:
         logger.error("tool_recomendacion_personalizada_failed", error=str(exc))
-        return f"❌ Error al generar recomendación: {str(exc)}"
+        return f"❌ Error al generar recomendación: {exc!s}"

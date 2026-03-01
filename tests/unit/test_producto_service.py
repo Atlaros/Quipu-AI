@@ -126,14 +126,10 @@ class TestActualizarPrecio:
         sample_producto_response: ProductoResponse,
     ) -> None:
         """Debe actualizar el precio de un producto existente."""
-        updated = sample_producto_response.model_copy(
-            update={"precio_unitario": Decimal("15.00")}
-        )
+        updated = sample_producto_response.model_copy(update={"precio_unitario": Decimal("15.00")})
         mock_repository.update.return_value = updated
 
-        result = await service.actualizar_precio(
-            sample_producto_response.id, Decimal("15.00")
-        )
+        result = await service.actualizar_precio(sample_producto_response.id, Decimal("15.00"))
 
         assert result.precio_unitario == Decimal("15.00")
 

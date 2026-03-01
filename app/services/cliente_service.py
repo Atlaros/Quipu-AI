@@ -24,9 +24,7 @@ class ClienteService:
     def __init__(self, repository: ClienteRepository) -> None:
         self.repository = repository
 
-    async def registrar_cliente(
-        self, data: ClienteCreate
-    ) -> ClienteResponse:
+    async def registrar_cliente(self, data: ClienteCreate) -> ClienteResponse:
         """Registra un nuevo cliente, validando duplicados por teléfono.
 
         Args:
@@ -60,9 +58,7 @@ class ClienteService:
         """
         return await self.repository.get_by_id(cliente_id)
 
-    async def listar_clientes(
-        self, limit: int = 50, offset: int = 0
-    ) -> list[ClienteResponse]:
+    async def listar_clientes(self, limit: int = 50, offset: int = 0) -> list[ClienteResponse]:
         """Lista clientes con paginación.
 
         Args:
@@ -74,9 +70,7 @@ class ClienteService:
         """
         return await self.repository.get_all(limit=limit, offset=offset)
 
-    async def actualizar_cliente(
-        self, cliente_id: UUID, data: dict[str, str]
-    ) -> ClienteResponse:
+    async def actualizar_cliente(self, cliente_id: UUID, data: dict[str, str]) -> ClienteResponse:
         """Actualiza campos de un cliente.
 
         Args:

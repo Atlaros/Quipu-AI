@@ -61,16 +61,16 @@ TOOLS = [
 # llama-3.3-70b: production, muy capaz
 # llama-3.1-8b: production, mayor cuota RPM, último recurso Groq
 GROQ_MODELS = [
-    "qwen/qwen3-32b",           # Más avanzado gratis, 32B con razonamiento
+    "qwen/qwen3-32b",  # Más avanzado gratis, 32B con razonamiento
     "llama-3.3-70b-versatile",  # Production, capaz y confiable
-    "llama-3.1-8b-instant",     # Mayor cuota RPM, último recurso
+    "llama-3.1-8b-instant",  # Mayor cuota RPM, último recurso
 ]
 
 # --- Modelos OpenRouter de fallback (en orden) ---
 OPENROUTER_MODELS = [
-    "deepseek/deepseek-v3-0324:free",   # Uno de los mejores modelos free, herramientas
+    "deepseek/deepseek-v3-0324:free",  # Uno de los mejores modelos free, herramientas
     "nvidia/llama-3.1-nemotron-70b-instruct:free",  # Muy capaz, free
-    "openrouter/auto",                  # Router inteligente de OR como último recurso
+    "openrouter/auto",  # Router inteligente de OR como último recurso
 ]
 
 # --- System Prompt del agente ---
@@ -170,6 +170,7 @@ def build_agent_graph() -> StateGraph:
             for or_model in OPENROUTER_MODELS:
                 try:
                     from langchain_openai import ChatOpenAI
+
                     or_llm = ChatOpenAI(
                         model=or_model,
                         openai_api_key=openrouter_api_key,

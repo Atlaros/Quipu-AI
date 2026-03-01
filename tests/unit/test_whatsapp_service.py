@@ -43,9 +43,7 @@ def valid_text_payload() -> dict:
                                     "id": "wamid.abc123",
                                     "timestamp": "1708000000",
                                     "type": "text",
-                                    "text": {
-                                        "body": "vendí 3 arroz a Juan"
-                                    },
+                                    "text": {"body": "vendí 3 arroz a Juan"},
                                 }
                             ],
                         },
@@ -172,4 +170,3 @@ class TestParseMessage:
 
         result = wa_service.parse_message(valid_text_payload)
         assert result is None
-

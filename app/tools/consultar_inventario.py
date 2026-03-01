@@ -2,12 +2,14 @@
 
 Tool callable por el agente LangGraph para verificar el stock
 de uno o todos los productos en la bodega.
+Usa ProductoRepository para acceso a datos.
 """
 
 import structlog
 from langchain_core.tools import tool
 
 from app.core.database import get_supabase_client
+from app.core.exceptions import DatabaseError
 
 logger = structlog.get_logger()
 
@@ -47,7 +49,7 @@ def consultar_inventario(
     """Consulta el inventario de la tienda de ropa/calzado.
 
     Permite filtrar por nombre, talla y color.
-    
+
     Args:
         producto_nombre: Nombre o marca del producto (ej: "Nike Air", "Polo").
         talla: Talla a buscar (ej: "42", "M").
@@ -66,23 +68,23 @@ def consultar_inventario(
 
         # Filtros dinámicos
         if producto_nombre:
-            # Búsqueda flexible: coincide con Nombre O Marca (ej: "Nike" encuentra "Air Force 1" de marca Nike)
             query = query.or_(f"nombre.ilike.%{producto_nombre}%,marca.ilike.%{producto_nombre}%")
-        
-        # Nota: Asumimos que las columnas existen tras la migración.
-        # En Supabase 'eq' filtra por igualdad exacta.
+
         if talla:
             query = query.eq("talla", talla)
         if color:
-            query = query.ilike("color", color)  # ilike para color flexible
+            query = query.ilike("color", color)
 
         result = query.limit(10).execute()
 
         if not result.data:
-            msg = f"❌ No encontré productos"
-            if producto_nombre: msg += f" con nombre '{producto_nombre}'"
-            if talla: msg += f" talla '{talla}'"
-            if color: msg += f" color '{color}'"
+            msg = "❌ No encontré productos"
+            if producto_nombre:
+                msg += f" con nombre '{producto_nombre}'"
+            if talla:
+                msg += f" talla '{talla}'"
+            if color:
+                msg += f" color '{color}'"
             return msg + "."
 
         lines = ["📦 **Inventario Disponible:**"]
@@ -90,32 +92,32 @@ def consultar_inventario(
             stock_data = _extraer_stock(prod.get("inventario"))
             stock = 0
             minimo = 0
-            
+
             if stock_data:
                 stock, minimo = stock_data
-            
-            # Formato: "Nike Air Max (42, Negro) - Marca: Nike"
+
             detalles = []
-            if prod.get('talla'): detalles.append(f"Talla {prod['talla']}")
-            if prod.get('color'): detalles.append(prod['color'])
+            if prod.get("talla"):
+                detalles.append(f"Talla {prod['talla']}")
+            if prod.get("color"):
+                detalles.append(prod["color"])
             info_extra = ", ".join(detalles)
-            
-            marca = prod.get('marca', 'Generico')
-            nombre_completo = f"{prod['nombre']} ({info_extra})" if info_extra else prod['nombre']
-            
+
+            marca = prod.get("marca", "Generico")
+            nombre_completo = f"{prod['nombre']} ({info_extra})" if info_extra else prod["nombre"]
+
             precio = prod.get("precio_unitario", 0)
             alerta = " ⚠️ STOCK BAJO" if stock <= minimo else ""
-            
-            lines.append(
-                f"• {nombre_completo} [{marca}]: {stock} und. "
-                f"(S/{precio:.2f}){alerta}"
-            )
+
+            lines.append(f"• {nombre_completo} [{marca}]: {stock} und. (S/{precio:.2f}){alerta}")
 
         return "\n".join(lines)
 
+    except DatabaseError as exc:
+        logger.error("tool_consultar_inventario_db_error", error=str(exc))
+        return f"❌ Error de base de datos: {exc.message}"
     except Exception as exc:
         logger.error("tool_consultar_inventario_failed", error=str(exc))
-        # Fallback amigable si fallan las columnas nuevas antes de la migración
         if "column" in str(exc) and "does not exist" in str(exc):
             return "❌ Error de config: La base de datos no tiene las columnas de talla/color aún."
-        return f"❌ Error al consultar: {str(exc)}"
+        return f"❌ Error al consultar: {exc!s}"

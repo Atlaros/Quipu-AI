@@ -7,6 +7,7 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
+from postgrest.exceptions import APIError
 
 
 class TestConversationRepository:
@@ -48,9 +49,7 @@ class TestConversationRepository:
         assert history[1]["role"] == "ai"
 
     @pytest.mark.asyncio
-    async def test_get_history_vacio(
-        self, repo: Any, mock_db: MagicMock
-    ) -> None:
+    async def test_get_history_vacio(self, repo: Any, mock_db: MagicMock) -> None:
         """get_history retorna lista vacía si no hay historial."""
         mock_db.table.return_value.select.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value.data = []
 
@@ -59,12 +58,10 @@ class TestConversationRepository:
         assert history == []
 
     @pytest.mark.asyncio
-    async def test_get_history_error_retorna_vacio(
-        self, repo: Any, mock_db: MagicMock
-    ) -> None:
+    async def test_get_history_error_retorna_vacio(self, repo: Any, mock_db: MagicMock) -> None:
         """get_history no falla si Supabase lanza error."""
-        mock_db.table.return_value.select.return_value.eq.return_value.order.return_value.limit.return_value.execute.side_effect = Exception(
-            "DB error"
+        mock_db.table.return_value.select.return_value.eq.return_value.order.return_value.limit.return_value.execute.side_effect = APIError(
+            {"message": "DB error", "code": "500", "details": "", "hint": ""}
         )
 
         history = await repo.get_history("59160891791")
@@ -72,9 +69,7 @@ class TestConversationRepository:
         assert history == []
 
     @pytest.mark.asyncio
-    async def test_save_message_exitoso(
-        self, repo: Any, mock_db: MagicMock
-    ) -> None:
+    async def test_save_message_exitoso(self, repo: Any, mock_db: MagicMock) -> None:
         """save_message inserta correctamente en Supabase."""
         mock_db.table.return_value.insert.return_value.execute.return_value = MagicMock()
 
@@ -84,12 +79,10 @@ class TestConversationRepository:
         mock_db.table.assert_called_with("conversaciones")
 
     @pytest.mark.asyncio
-    async def test_save_message_error_no_falla(
-        self, repo: Any, mock_db: MagicMock
-    ) -> None:
+    async def test_save_message_error_no_falla(self, repo: Any, mock_db: MagicMock) -> None:
         """save_message no falla si Supabase lanza error."""
-        mock_db.table.return_value.insert.return_value.execute.side_effect = Exception(
-            "DB error"
+        mock_db.table.return_value.insert.return_value.execute.side_effect = APIError(
+            {"message": "DB error", "code": "500", "details": "", "hint": ""}
         )
 
         # No debe lanzar excepción

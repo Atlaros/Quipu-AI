@@ -4,6 +4,7 @@ Maneja la comunicación con la WhatsApp Business Cloud API de Meta.
 Parsea webhooks entrantes, envía texto e imágenes al usuario.
 """
 
+import httpx
 import structlog
 from httpx import AsyncClient
 
@@ -106,9 +107,7 @@ class WhatsAppService:
             # Paso 1: Obtener URL de descarga
             url_endpoint = f"{WHATSAPP_API_URL}/{media_id}"
             async with AsyncClient() as client:
-                response = await client.get(
-                    url_endpoint, headers=headers, timeout=10.0
-                )
+                response = await client.get(url_endpoint, headers=headers, timeout=10.0)
 
             if response.status_code != 200:
                 logger.error(
@@ -125,9 +124,7 @@ class WhatsAppService:
 
             # Paso 2: Descargar bytes
             async with AsyncClient() as client:
-                download = await client.get(
-                    media_url, headers=headers, timeout=30.0
-                )
+                download = await client.get(media_url, headers=headers, timeout=30.0)
 
             if download.status_code != 200:
                 logger.error(
@@ -143,7 +140,7 @@ class WhatsAppService:
             )
             return download.content
 
-        except Exception as exc:
+        except httpx.HTTPError as exc:
             logger.error("whatsapp_media_download_error", error=str(exc))
             return None
 
@@ -176,9 +173,7 @@ class WhatsAppService:
 
         try:
             async with AsyncClient() as client:
-                response = await client.post(
-                    url, json=payload, headers=headers, timeout=10.0
-                )
+                response = await client.post(url, json=payload, headers=headers, timeout=10.0)
 
             if response.status_code == 200:
                 logger.info("whatsapp_message_sent", to=to)
@@ -191,7 +186,7 @@ class WhatsAppService:
             )
             return False
 
-        except Exception as exc:
+        except httpx.HTTPError as exc:
             logger.error("whatsapp_send_error", error=str(exc))
             return False
 
@@ -217,6 +212,7 @@ class WhatsAppService:
         try:
             with open(file_path, "rb") as f:
                 import mimetypes
+
                 mime_type, _ = mimetypes.guess_type(file_path)
                 if not mime_type:
                     mime_type = "application/octet-stream"
@@ -247,7 +243,7 @@ class WhatsAppService:
             )
             return None
 
-        except Exception as exc:
+        except httpx.HTTPError as exc:
             logger.error("whatsapp_media_upload_error", error=str(exc))
             return None
 
@@ -285,9 +281,7 @@ class WhatsAppService:
 
         try:
             async with AsyncClient() as client:
-                response = await client.post(
-                    url, json=payload, headers=headers, timeout=10.0
-                )
+                response = await client.post(url, json=payload, headers=headers, timeout=10.0)
 
             if response.status_code == 200:
                 logger.info("whatsapp_image_sent", to=to, media_id=media_id)
@@ -300,7 +294,7 @@ class WhatsAppService:
             )
             return False
 
-        except Exception as exc:
+        except httpx.HTTPError as exc:
             logger.error("whatsapp_image_send_error", error=str(exc))
             return False
 
@@ -327,8 +321,6 @@ class WhatsAppService:
 
         try:
             async with AsyncClient() as client:
-                await client.post(
-                    url, json=payload, headers=headers, timeout=5.0
-                )
-        except Exception as exc:
+                await client.post(url, json=payload, headers=headers, timeout=5.0)
+        except httpx.HTTPError as exc:
             logger.error("whatsapp_mark_read_failed", error=str(exc))

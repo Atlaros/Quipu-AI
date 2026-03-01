@@ -28,9 +28,7 @@ class ProductoService:
     def __init__(self, repository: ProductoRepository) -> None:
         self.repository = repository
 
-    async def crear_producto(
-        self, data: ProductoCreate
-    ) -> ProductoResponse:
+    async def crear_producto(self, data: ProductoCreate) -> ProductoResponse:
         """Crea un nuevo producto con validaciones de negocio.
 
         Args:
@@ -46,8 +44,7 @@ class ProductoService:
         # Regla: precio máximo
         if data.precio_unitario > self.PRECIO_MAXIMO:
             raise ValidationError(
-                f"Precio {data.precio_unitario} excede el máximo "
-                f"permitido ({self.PRECIO_MAXIMO})"
+                f"Precio {data.precio_unitario} excede el máximo permitido ({self.PRECIO_MAXIMO})"
             )
 
         # Regla: nombre único
@@ -73,9 +70,7 @@ class ProductoService:
         """
         return await self.repository.get_by_id(producto_id)
 
-    async def listar_productos(
-        self, limit: int = 50, offset: int = 0
-    ) -> list[ProductoResponse]:
+    async def listar_productos(self, limit: int = 50, offset: int = 0) -> list[ProductoResponse]:
         """Lista productos con paginación.
 
         Args:
@@ -87,9 +82,7 @@ class ProductoService:
         """
         return await self.repository.get_all(limit=limit, offset=offset)
 
-    async def actualizar_precio(
-        self, producto_id: UUID, nuevo_precio: Decimal
-    ) -> ProductoResponse:
+    async def actualizar_precio(self, producto_id: UUID, nuevo_precio: Decimal) -> ProductoResponse:
         """Actualiza el precio de un producto.
 
         Args:
@@ -107,8 +100,7 @@ class ProductoService:
 
         if nuevo_precio > self.PRECIO_MAXIMO:
             raise ValidationError(
-                f"Precio {nuevo_precio} excede el máximo "
-                f"permitido ({self.PRECIO_MAXIMO})"
+                f"Precio {nuevo_precio} excede el máximo permitido ({self.PRECIO_MAXIMO})"
             )
 
         logger.info(
@@ -116,9 +108,7 @@ class ProductoService:
             producto_id=str(producto_id),
             nuevo_precio=str(nuevo_precio),
         )
-        return await self.repository.update(
-            producto_id, {"precio_unitario": str(nuevo_precio)}
-        )
+        return await self.repository.update(producto_id, {"precio_unitario": str(nuevo_precio)})
 
     async def eliminar_producto(self, producto_id: UUID) -> None:
         """Elimina un producto (soft delete).

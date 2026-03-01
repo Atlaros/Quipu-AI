@@ -28,6 +28,7 @@ router = APIRouter(prefix="/api/v1/productos", tags=["Productos"])
 
 # --- Dependency Injection ---
 
+
 def _get_service() -> ProductoService:
     """Factory para inyectar ProductoService con su repository."""
     db = get_supabase_client()
@@ -37,6 +38,7 @@ def _get_service() -> ProductoService:
 
 # --- Request Models ---
 
+
 class PrecioUpdate(BaseModel):
     """Schema para actualizar el precio de un producto."""
 
@@ -44,6 +46,7 @@ class PrecioUpdate(BaseModel):
 
 
 # --- Endpoints ---
+
 
 @router.post("/", response_model=ProductoResponse, status_code=201)
 async def crear_producto(
@@ -125,9 +128,7 @@ async def actualizar_precio(
         El producto con precio actualizado.
     """
     try:
-        return await service.actualizar_precio(
-            producto_id, data.precio_unitario
-        )
+        return await service.actualizar_precio(producto_id, data.precio_unitario)
 
     except ResourceNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

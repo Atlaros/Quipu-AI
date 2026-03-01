@@ -9,8 +9,8 @@ import tempfile
 from pathlib import Path
 
 import structlog
-from groq import Groq
 from google import genai
+from groq import Groq
 
 from app.core.config import settings
 
@@ -26,7 +26,7 @@ class MediaService:
             self._client = None
         else:
             self._client = Groq(api_key=settings.groq_api_key)
-            
+
         if settings.google_api_keys:
             self._gemini_client = genai.Client(api_key=settings.google_api_keys[0])
             self._has_gemini = True
@@ -49,10 +49,10 @@ class MediaService:
 
         suffix = ".ogg" if "ogg" in mime_type else ".mp3"
         tmp_path = Path(tempfile.mkdtemp()) / f"audio{suffix}"
-        
+
         try:
             tmp_path.write_bytes(audio_bytes)
-            
+
             with open(tmp_path, "rb") as file:
                 transcription = self._client.audio.transcriptions.create(
                     file=(tmp_path.name, file.read()),
@@ -60,9 +60,9 @@ class MediaService:
                     prompt="Transcribe el siguiente audio en español.",
                     response_format="json",
                     language="es",
-                    temperature=0.0
+                    temperature=0.0,
                 )
-            
+
             text = transcription.text.strip()
             logger.info("audio_transcribed_groq", length=len(text))
             return text
@@ -94,19 +94,18 @@ class MediaService:
 
         try:
             prompt = "Eres un experto en inventario de ropa. Describe esta imagen brevemente (Producto, Color, Marca estimada). Responde en español."
-            
+
             image_part = {
                 "inline_data": {
                     "data": base64.b64encode(image_bytes).decode("utf-8"),
-                    "mime_type": mime_type
+                    "mime_type": mime_type,
                 }
             }
-            
+
             response = self._gemini_client.models.generate_content(
-                model="gemini-2.5-flash", 
-                contents=[prompt, image_part]
+                model="gemini-2.5-flash", contents=[prompt, image_part]
             )
-            
+
             description = response.text.strip()
             logger.info("image_processed_gemini", length=len(description))
             return description

@@ -9,6 +9,7 @@ from collections.abc import Generator
 from supabase import Client
 
 from app.core.database import get_supabase_client
+from app.services.redis_service import RedisService, redis_service
 
 
 def get_db() -> Generator[Client, None, None]:
@@ -19,3 +20,12 @@ def get_db() -> Generator[Client, None, None]:
     """
     client = get_supabase_client()
     yield client
+
+
+def get_redis() -> RedisService:
+    """Provee la instancia singleton de RedisService.
+
+    Returns:
+        RedisService: Instancia configurada del servicio Redis.
+    """
+    return redis_service

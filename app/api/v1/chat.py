@@ -54,9 +54,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
     try:
         from langchain_core.messages import HumanMessage
 
-        result = agent.invoke(
-            {"messages": [HumanMessage(content=request.message)]}
-        )
+        result = agent.invoke({"messages": [HumanMessage(content=request.message)]})
 
         # Extraer la última respuesta del agente
         last_message = result["messages"][-1]

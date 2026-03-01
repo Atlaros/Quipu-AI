@@ -152,7 +152,9 @@ def festividades_proximas(dias_anticipacion: int = 60) -> str:
 
     lines = [f"🗓️ **Festividades próximas (próximos {dias_anticipacion} días):**"]
     for dias_rest, fecha, fest in proximas:
-        urgencia = "🔥 ¡YA!" if dias_rest <= 7 else ("⚡ Pronto" if dias_rest <= 21 else "📌 En agenda")
+        urgencia = (
+            "🔥 ¡YA!" if dias_rest <= 7 else ("⚡ Pronto" if dias_rest <= 21 else "📌 En agenda")
+        )
         lines.append(
             f"\n{fest['emoji']} **{fest['nombre']}** — {fecha.strftime('%d/%m/%Y')} "
             f"({dias_rest} días) {urgencia}\n"

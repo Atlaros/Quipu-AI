@@ -64,9 +64,7 @@ class VentaService:
         """
         return await self.repository.get_by_id(venta_id)
 
-    async def listar_ventas(
-        self, limit: int = 50, offset: int = 0
-    ) -> list[VentaResponse]:
+    async def listar_ventas(self, limit: int = 50, offset: int = 0) -> list[VentaResponse]:
         """Lista ventas con paginación.
 
         Args:

@@ -20,6 +20,7 @@ from fastapi.responses import PlainTextResponse
 from app.agent.graph import agent
 from app.core.config import settings
 from app.repositories.conversation_repository import ConversationRepository
+from app.services.redis_service import redis_service
 from app.services.whatsapp_service import WhatsAppService
 
 logger = structlog.get_logger()
@@ -27,7 +28,7 @@ logger = structlog.get_logger()
 router = APIRouter(prefix="/webhook", tags=["WhatsApp Webhook"])
 
 wa_service = WhatsAppService()
-conversation_repo = ConversationRepository()
+conversation_repo = ConversationRepository(redis=redis_service)
 
 
 def _verify_signature(payload: bytes, signature: str) -> bool:
@@ -177,6 +178,7 @@ async def _process_message(message_data: dict) -> None:
             return
 
         from app.services.media_service import MediaService
+
         text = await MediaService().transcribe_audio(audio_bytes, mime_type)
 
         if not text:
@@ -201,6 +203,7 @@ async def _process_message(message_data: dict) -> None:
             return
 
         from app.services.media_service import MediaService
+
         description = await MediaService().process_image(image_bytes, mime_type)
 
         if not description:
@@ -209,7 +212,11 @@ async def _process_message(message_data: dict) -> None:
             )
             return
 
-        text = f"{caption}\n\n[Imagen: {description}]" if caption else f"[El usuario envió una imagen: {description}]"
+        text = (
+            f"{caption}\n\n[Imagen: {description}]"
+            if caption
+            else f"[El usuario envió una imagen: {description}]"
+        )
         logger.info("webhook_image_processed", phone=phone, description=description[:50])
 
     else:
@@ -243,7 +250,8 @@ async def _process_message(message_data: dict) -> None:
             response_text = last_msg.content
         elif isinstance(last_msg.content, list):
             response_text = " ".join(
-                part.get("text", "") for part in last_msg.content
+                part.get("text", "")
+                for part in last_msg.content
                 if isinstance(part, dict) and "text" in part
             )
         else:
@@ -255,8 +263,7 @@ async def _process_message(message_data: dict) -> None:
     except Exception as exc:
         logger.error("webhook_agent_failed", error=str(exc))
         response_text = (
-            "⚠️ Hubo un problema procesando tu mensaje. "
-            "Intenta de nuevo en unos segundos."
+            "⚠️ Hubo un problema procesando tu mensaje. Intenta de nuevo en unos segundos."
         )
 
     # Enviar respuesta (texto o imagen)
@@ -265,7 +272,7 @@ async def _process_message(message_data: dict) -> None:
             end_idx = response_text.find("]")
             if end_idx != -1:
                 image_path = response_text[7:end_idx]
-                caption = response_text[end_idx + 1:].strip()
+                caption = response_text[end_idx + 1 :].strip()
             else:
                 image_path = response_text.replace("[IMAGE:", "")
                 caption = ""
@@ -280,4 +287,3 @@ async def _process_message(message_data: dict) -> None:
             await wa_service.send_message(to=phone, text=response_text)
     else:
         await wa_service.send_message(to=phone, text=response_text)
-

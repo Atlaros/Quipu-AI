@@ -34,9 +34,8 @@ graph LR
     API -->|HMAC-SHA256| SEC{Verificación}
     SEC -->|✅| HIST[Historial]
     HIST --> AGENT[LangGraph Agent]
-    AGENT -->|Tool Call| TOOLS[🔧 Tools]
-    TOOLS -->|registrar_venta| DB[(Supabase)]
-    TOOLS -->|consultar_inventario| DB
+    AGENT -->|Tool Call| TOOLS[🔧 15 Tools]
+    TOOLS -->|Repository Layer| DB[(Supabase)]
     AGENT -->|Respuesta| API
     API -->|WhatsApp API| WA
 ```
@@ -46,13 +45,36 @@ graph LR
 | Capa | Tecnología | Justificación |
 |---|---|---|
 | **API** | FastAPI | Async, tipado, auto-docs |
-| **Agente** | LangGraph + Gemini 2.0 Flash | ReAct pattern, tool calling nativo |
+| **Agente** | LangGraph + Groq (Llama 3.3, Mixtral) | ReAct pattern, cascada con fallback a OpenRouter |
 | **Base de Datos** | Supabase (PostgreSQL) | REST API, auth, RLS |
+| **Cache** | Redis | Historial de conversaciones, deduplicación |
 | **Mensajería** | WhatsApp Business Cloud API | Canal principal |
 | **Observabilidad** | structlog (JSON) | Logs estructurados para producción |
-| **Testing** | pytest + pytest-mock | 34 tests unitarios |
-| **CI/CD** | GitHub Actions | Lint (ruff) + tests automáticos |
+| **Testing** | pytest + pytest-mock + pytest-cov | 44+ tests (unit + integration) |
+| **CI/CD** | GitHub Actions | Ruff lint + format + tests con coverage |
 | **Gestión deps** | uv (Astral) | 10x más rápido que pip |
+
+---
+
+## 🔧 Tools del Agente (15)
+
+| Tool | Descripción |
+|---|---|
+| `registrar_venta` | Registra ventas con variantes (talla, color) |
+| `consultar_inventario` | Consulta stock con filtros |
+| `consultar_metricas` | Métricas de ventas (hoy/semana/mes) |
+| `generar_reporte_ventas` | Gráfico de barras de ventas (PNG) |
+| `exportar_reporte` | Exporta ventas a CSV |
+| `registrar_cliente` | Registra nuevo cliente |
+| `registrar_compra_proveedor` | Ingresa mercadería al inventario |
+| `alerta_stock_bajo` | Detecta productos con stock crítico |
+| `enviar_catalogo` | Muestra catálogo con precios y stock |
+| `registrar_deuda` | Registra créditos/deudas de clientes |
+| `consultar_deudas` | Lista deudas pendientes de cobro |
+| `recomendacion_personalizada` | Sugiere productos por historial |
+| `buscar_web` | Búsqueda web con Tavily |
+| `calcular_descuento` | Calcula descuentos y márgenes |
+| `festividades_proximas` | Sugiere promos por feriados |
 
 ---
 
@@ -62,12 +84,12 @@ graph LR
 - Python 3.11+
 - [uv](https://docs.astral.sh/uv/) instalado
 - Cuenta de [Supabase](https://supabase.com)
-- Cuenta de [Google AI Studio](https://aistudio.google.com) (API key de Gemini)
+- API key de [Groq](https://console.groq.com)
 
 ### 1. Clonar e instalar
 
 ```bash
-git clone https://github.com/yourusername/quipu-ai.git
+git clone https://github.com/atlaros/quipu-ai.git
 cd quipu-ai
 uv sync
 ```
@@ -86,7 +108,7 @@ cp .env.example .env
 uv run uvicorn main:app --port 8000 --reload
 
 # Tests
-uv run pytest tests/ -v
+uv run pytest tests/ -v --cov=app
 ```
 
 ### 4. WhatsApp (opcional)
@@ -106,7 +128,7 @@ ngrok http 8000
 quipu-ai/
 ├── app/
 │   ├── agent/
-│   │   ├── graph.py          # Grafo LangGraph (ReAct + retry)
+│   │   ├── graph.py          # Grafo LangGraph (ReAct + cascada LLM)
 │   │   └── state.py          # Estado del agente
 │   ├── api/v1/
 │   │   ├── chat.py            # POST /chat (test directo)
@@ -118,18 +140,22 @@ quipu-ai/
 │   │   └── webhook.py         # WhatsApp webhook (HMAC + historial)
 │   ├── core/
 │   │   ├── config.py          # Settings (Pydantic)
-│   │   ├── database.py        # Supabase client
+│   │   ├── database.py        # Supabase client (singleton)
 │   │   ├── exceptions.py      # Custom exceptions
 │   │   └── logging.py         # structlog config
 │   ├── repositories/          # Capa de datos (Supabase queries)
-│   ├── services/              # Lógica de negocio
-│   └── tools/                 # LangGraph tools (venta, inventario, reportes)
-├── tests/unit/                # 34 tests
-├── .github/workflows/ci.yml   # GitHub Actions
+│   ├── services/              # Lógica de negocio + Redis + WhatsApp
+│   └── tools/                 # 15 LangGraph tools
+├── scripts/
+│   ├── sql/                   # Migrations y schemas
+│   └── verify/                # Scripts de verificación manual
+├── tests/
+│   ├── unit/                  # Tests unitarios (services + tools)
+│   └── integration/           # Tests de integración (webhook flow)
+├── .github/workflows/ci.yml   # GitHub Actions (lint + format + tests + coverage)
 ├── Dockerfile                 # Multi-stage (uv + slim)
-├── agente.md                  # System prompt del agente
 ├── main.py                    # App factory
-└── pyproject.toml             # Dependencias (uv)
+└── pyproject.toml             # Dependencias + Ruff + mypy + pytest
 ```
 
 ---
@@ -171,11 +197,11 @@ docker run -p 8000:8000 --env-file .env quipu-ai
 # Todos los tests
 uv run pytest tests/ -v
 
-# Solo webhook tests
-uv run pytest tests/unit/test_webhook.py -v
-
 # Con coverage
 uv run pytest tests/ --cov=app --cov-report=term-missing
+
+# Solo tools
+uv run pytest tests/unit/test_tools_*.py -v
 ```
 
 ---

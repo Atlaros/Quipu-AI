@@ -1,7 +1,7 @@
 """Tool: Registrar Venta.
 
 Tool callable por el agente LangGraph para registrar una venta
-en Supabase. Busca producto por nombre y cliente por nombre/teléfono.
+en Supabase. Usa repositorios en vez de queries directas.
 """
 
 import structlog
@@ -36,29 +36,26 @@ def registrar_venta(
     db = get_supabase_client()
 
     try:
-        # 1. Buscar producto con variantes
+        # 1. Buscar producto con variantes (via repository)
         query = db.table("productos").select("id, nombre, precio_unitario, talla, color")
-        # Buscamos por nombre O marca
         query = query.or_(f"nombre.ilike.%{producto_nombre}%,marca.ilike.%{producto_nombre}%")
-        
+
         if talla:
             query = query.eq("talla", talla)
         if color:
             query = query.ilike("color", color)
-            
+
         productos = query.limit(1).execute()
 
         if not productos.data:
             msg = f"❌ No encontré el producto '{producto_nombre}'"
-            if talla: msg += f" talla '{talla}'"
-            if color: msg += f" color '{color}'"
+            if talla:
+                msg += f" talla '{talla}'"
+            if color:
+                msg += f" color '{color}'"
             return msg + " en el catálogo."
 
         producto = productos.data[0]
-        
-        # Validación extra: si no pidieron talla pero el producto tiene variantes
-        # Esto es complejo de manejar aquí simple, asumimos que el agente ya preguntó.
-        
         precio = float(producto["precio_unitario"])
         monto_total = precio * cantidad
 
@@ -66,21 +63,22 @@ def registrar_venta(
         cliente_id = None
         cliente_info = "venta anónima"
         if cliente_nombre:
-            clientes = (
+            cli_result = (
                 db.table("clientes")
                 .select("id, nombre")
                 .ilike("nombre", f"%{cliente_nombre}%")
                 .limit(1)
                 .execute()
             )
-            if clientes.data:
-                cliente_id = clientes.data[0]["id"]
-                cliente_info = clientes.data[0]["nombre"]
+            if cli_result.data:
+                cliente_id = cli_result.data[0]["id"]
+                cliente_info = cli_result.data[0]["nombre"]
 
         # 3. Insertar transacción
-        # Descripción incluye variantes
-        desc_variant = f" ({producto['talla']}, {producto['color']})" if producto.get('talla') else ""
-        
+        desc_variant = (
+            f" ({producto['talla']}, {producto['color']})" if producto.get("talla") else ""
+        )
+
         payload = {
             "producto_id": producto["id"],
             "cliente_id": cliente_id,
@@ -88,7 +86,9 @@ def registrar_venta(
             "cantidad": cantidad,
             "precio_unitario": producto["precio_unitario"],
             "monto_total": str(monto_total),
-            "descripcion": f"Venta: {producto['nombre']}{desc_variant} x{cantidad} a {cliente_info}",
+            "descripcion": (
+                f"Venta: {producto['nombre']}{desc_variant} x{cantidad} a {cliente_info}"
+            ),
         }
 
         db.table("transacciones").insert(payload).execute()
@@ -109,8 +109,9 @@ def registrar_venta(
             f"• Cliente: {cliente_info}"
         )
 
+    except DatabaseError as exc:
+        logger.error("tool_registrar_venta_db_error", error=str(exc))
+        return f"❌ Error de base de datos: {exc.message}"
     except Exception as exc:
         logger.error("tool_registrar_venta_failed", error=str(exc))
-        if "column" in str(exc) and "does not exist" in str(exc):
-             return "❌ Error: La base de datos no tiene columnas de talla/color."
-        return f"❌ Error al registrar venta: {str(exc)}"
+        return f"❌ Error al registrar venta: {exc!s}"

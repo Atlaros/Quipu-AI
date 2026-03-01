@@ -39,5 +39,8 @@ jobs:
       - name: Lint (ruff)
         run: uv run ruff check app/ tests/
 
+      - name: Format check (ruff)
+        run: uv run ruff format --check app/ tests/
+
       - name: Tests
-        run: uv run pytest tests/ -v --tb=short
+        run: uv run pytest tests/ -v --tb=short --cov=app --cov-report=term-missing --cov-fail-under=60

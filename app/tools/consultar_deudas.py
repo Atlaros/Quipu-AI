@@ -1,13 +1,15 @@
 """Tool: Consultar Deudas Pendientes.
 
 Tool callable por el agente LangGraph para listar las deudas
-o créditos pendientes de cobro, por cliente o en total.
+o créditos pendientes de cobro. Usa DeudaRepository.
 """
 
 import structlog
 from langchain_core.tools import tool
 
 from app.core.database import get_supabase_client
+from app.core.exceptions import DatabaseError
+from app.repositories.deuda_repository import DeudaRepository
 
 logger = structlog.get_logger()
 
@@ -26,31 +28,25 @@ def consultar_deudas(cliente_nombre: str = "") -> str:
         Lista de deudas pendientes con monto total.
     """
     db = get_supabase_client()
+    deuda_repo = DeudaRepository(db)
 
     try:
-        query = db.table("deudas").select(
-            "cliente_nombre, descripcion, monto, fecha_vencimiento, created_at"
-        ).eq("pagado", False).order("created_at", desc=False)
+        deudas = deuda_repo.get_pendientes(cliente_nombre)
 
-        if cliente_nombre:
-            query = query.ilike("cliente_nombre", f"%{cliente_nombre}%")
-
-        result = query.execute()
-
-        if not result.data:
+        if not deudas:
             if cliente_nombre:
                 return f"✅ {cliente_nombre} no tiene deudas pendientes."
             return "✅ No hay deudas pendientes. ¡Todo cobrado!"
 
-        total = sum(float(row["monto"]) for row in result.data)
+        total = sum(float(row["monto"]) for row in deudas)
         titulo = (
             f"💳 **Deudas de {cliente_nombre}:**"
             if cliente_nombre
-            else f"💳 **Deudas pendientes ({len(result.data)} clientes):**"
+            else f"💳 **Deudas pendientes ({len(deudas)} clientes):**"
         )
         lines = [titulo]
 
-        for row in result.data:
+        for row in deudas:
             venc = f" | vence {row['fecha_vencimiento']}" if row.get("fecha_vencimiento") else ""
             lines.append(
                 f"• {row['cliente_nombre']}: S/{float(row['monto']):.2f} "
@@ -59,9 +55,12 @@ def consultar_deudas(cliente_nombre: str = "") -> str:
 
         lines.append(f"\n💰 **Total pendiente: S/{total:.2f}**")
 
-        logger.info("consultar_deudas", num_deudas=len(result.data), total=total)
+        logger.info("consultar_deudas", num_deudas=len(deudas), total=total)
         return "\n".join(lines)
 
+    except DatabaseError as exc:
+        logger.error("tool_consultar_deudas_db_error", error=str(exc))
+        return f"❌ Error de base de datos: {exc.message}"
     except Exception as exc:
         logger.error("tool_consultar_deudas_failed", error=str(exc))
-        return f"❌ Error al consultar deudas: {str(exc)}"
+        return f"❌ Error al consultar deudas: {exc!s}"

@@ -38,14 +38,14 @@ class VentaCreate(BaseModel):
 
     producto_id: UUID
     cliente_id: UUID | None = None
-    tipo: str = Field(default="venta", pattern=r"^(venta|compra)$", description="Tipo: venta o compra")
+    tipo: str = Field(
+        default="venta", pattern=r"^(venta|compra)$", description="Tipo: venta o compra"
+    )
     cantidad: int = Field(..., gt=0, description="Cantidad vendida (mínimo 1)")
     precio_unitario: Decimal = Field(
         ..., gt=0, max_digits=10, decimal_places=2, description="Precio unitario"
     )
-    descripcion: str = Field(
-        default="", max_length=500, description="Descripción de la venta"
-    )
+    descripcion: str = Field(default="", max_length=500, description="Descripción de la venta")
 
     @property
     def monto_total(self) -> Decimal:

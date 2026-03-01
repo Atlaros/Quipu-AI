@@ -6,9 +6,6 @@ Verifica que solo requests firmados correctamente son aceptados.
 import hashlib
 import hmac
 
-
-
-
 from app.api.v1.webhook import _verify_signature
 
 
@@ -21,17 +18,13 @@ class TestVerifySignature:
         payload = b'{"entry": []}'
 
         # Generar firma correcta
-        expected_hash = hmac.new(
-            secret.encode("utf-8"), payload, hashlib.sha256
-        ).hexdigest()
+        expected_hash = hmac.new(secret.encode("utf-8"), payload, hashlib.sha256).hexdigest()
         signature = f"sha256={expected_hash}"
 
         # Mockear settings con monkeypatch
         from unittest.mock import patch
 
-        with patch(
-            "app.api.v1.webhook.settings"
-        ) as mock_settings:
+        with patch("app.api.v1.webhook.settings") as mock_settings:
             mock_settings.whatsapp_app_secret = secret
             result = _verify_signature(payload, signature)
 
@@ -41,9 +34,7 @@ class TestVerifySignature:
         """Firma HMAC incorrecta → False."""
         from unittest.mock import patch
 
-        with patch(
-            "app.api.v1.webhook.settings"
-        ) as mock_settings:
+        with patch("app.api.v1.webhook.settings") as mock_settings:
             mock_settings.whatsapp_app_secret = "mi_app_secret"
             result = _verify_signature(b'{"data": "test"}', "sha256=firma_falsa_123")
 
@@ -53,9 +44,7 @@ class TestVerifySignature:
         """Firma sin prefijo sha256= → False."""
         from unittest.mock import patch
 
-        with patch(
-            "app.api.v1.webhook.settings"
-        ) as mock_settings:
+        with patch("app.api.v1.webhook.settings") as mock_settings:
             mock_settings.whatsapp_app_secret = "mi_app_secret"
             result = _verify_signature(b'{"data": "test"}', "md5=abc123")
 
@@ -65,9 +54,7 @@ class TestVerifySignature:
         """Sin header de firma → False."""
         from unittest.mock import patch
 
-        with patch(
-            "app.api.v1.webhook.settings"
-        ) as mock_settings:
+        with patch("app.api.v1.webhook.settings") as mock_settings:
             mock_settings.whatsapp_app_secret = "mi_app_secret"
             result = _verify_signature(b'{"data": "test"}', "")
 
@@ -77,9 +64,7 @@ class TestVerifySignature:
         """Sin app_secret configurado → True (modo desarrollo)."""
         from unittest.mock import patch
 
-        with patch(
-            "app.api.v1.webhook.settings"
-        ) as mock_settings:
+        with patch("app.api.v1.webhook.settings") as mock_settings:
             mock_settings.whatsapp_app_secret = ""
             result = _verify_signature(b'{"data": "test"}', "sha256=cualquiera")
 
@@ -93,22 +78,16 @@ class TestRetryConfig:
         """Detecta errores de rate limit de Gemini."""
         from app.agent.graph import _is_rate_limit_error
 
-        assert _is_rate_limit_error(
-            Exception("429 RESOURCE_EXHAUSTED: quota exceeded")
-        ) is True
+        assert _is_rate_limit_error(Exception("429 RESOURCE_EXHAUSTED: quota exceeded")) is True
 
     def test_is_rate_limit_error_ignora_otros_errores(self) -> None:
         """No reintenta errores que no son rate limit."""
         from app.agent.graph import _is_rate_limit_error
 
-        assert _is_rate_limit_error(
-            Exception("Invalid API key")
-        ) is False
+        assert _is_rate_limit_error(Exception("Invalid API key")) is False
 
     def test_is_rate_limit_error_detecta_429(self) -> None:
         """Detecta código 429."""
         from app.agent.graph import _is_rate_limit_error
 
-        assert _is_rate_limit_error(
-            Exception("Error 429: Too many requests")
-        ) is True
+        assert _is_rate_limit_error(Exception("Error 429: Too many requests")) is True

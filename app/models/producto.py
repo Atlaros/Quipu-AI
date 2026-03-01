@@ -31,7 +31,7 @@ class ProductoCreate(BaseModel):
                     "unidad_medida": "par",
                     "talla": "42",
                     "color": "Blanco",
-                    "marca": "Nike"
+                    "marca": "Nike",
                 }
             ]
         }
@@ -39,9 +39,7 @@ class ProductoCreate(BaseModel):
 
     nombre: str = Field(..., min_length=2, max_length=200)
     categoria: str = Field(default="Ropa y Calzado", max_length=100)
-    precio_unitario: Decimal = Field(
-        ..., gt=0, max_digits=10, decimal_places=2
-    )
+    precio_unitario: Decimal = Field(..., gt=0, max_digits=10, decimal_places=2)
     unidad_medida: str = Field(default="unidad", max_length=50)
     talla: str | None = Field(default=None, max_length=20)
     color: str | None = Field(default=None, max_length=50)

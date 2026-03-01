@@ -2,14 +2,17 @@
 
 Tool callable por el agente para obtener métricas de ventas
 en un periodo determinado (hoy, semana, mes).
+Usa VentaRepository.get_por_rango() para acceso a datos.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import structlog
 from langchain_core.tools import tool
 
 from app.core.database import get_supabase_client
+from app.core.exceptions import DatabaseError
+from app.repositories.venta_repository import VentaRepository
 
 logger = structlog.get_logger()
 
@@ -23,7 +26,7 @@ def _get_date_range(periodo: str) -> tuple[str, str]:
     Returns:
         Tupla (fecha_inicio, fecha_fin) en formato ISO.
     """
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     end = now.isoformat()
 
     if periodo == "semana":
@@ -50,27 +53,18 @@ def consultar_metricas(periodo: str = "hoy") -> str:
         Mensaje con el resumen de métricas de ventas.
     """
     db = get_supabase_client()
+    venta_repo = VentaRepository(db)
 
     try:
         start, end = _get_date_range(periodo)
-
-        # Consultar transacciones en el rango
-        result = (
-            db.table("transacciones")
-            .select(
-                "cantidad, monto_total, created_at, "
-                "productos(nombre), clientes(nombre)"
-            )
-            .eq("tipo", "venta")
-            .gte("created_at", start)
-            .lte("created_at", end)
-            .execute()
-        )
-
-        ventas = result.data if result.data else []
+        ventas = venta_repo.get_por_rango(start, end)
 
         if not ventas:
-            periodo_label = {"hoy": "hoy", "semana": "esta semana", "mes": "este mes"}
+            periodo_label = {
+                "hoy": "hoy",
+                "semana": "esta semana",
+                "mes": "este mes",
+            }
             return f"📊 No hay ventas registradas {periodo_label.get(periodo, periodo)}."
 
         # Calcular métricas
@@ -99,9 +93,7 @@ def consultar_metricas(periodo: str = "hoy") -> str:
                 clientes_unicos.add(cliente[0]["nombre"])
 
         # Top 3 productos
-        top_productos = sorted(
-            producto_count.items(), key=lambda x: x[1], reverse=True
-        )[:3]
+        top_productos = sorted(producto_count.items(), key=lambda x: x[1], reverse=True)[:3]
 
         periodo_label = {
             "hoy": "📅 Hoy",
@@ -130,6 +122,9 @@ def consultar_metricas(periodo: str = "hoy") -> str:
 
         return "\n".join(lines)
 
+    except DatabaseError as exc:
+        logger.error("tool_consultar_metricas_db_error", error=str(exc))
+        return f"❌ Error de base de datos: {exc.message}"
     except Exception as exc:
         logger.error("tool_consultar_metricas_failed", error=str(exc))
-        return f"❌ Error al consultar métricas: {str(exc)}"
+        return f"❌ Error al consultar métricas: {exc!s}"

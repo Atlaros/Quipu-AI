@@ -2,12 +2,14 @@
 
 Tool callable por el agente LangGraph para identificar productos
 con inventario crítico (por debajo del mínimo configurado).
+Usa las queries de repositorios para acceso a datos.
 """
 
 import structlog
 from langchain_core.tools import tool
 
 from app.core.database import get_supabase_client
+from app.core.exceptions import DatabaseError
 
 logger = structlog.get_logger()
 
@@ -26,10 +28,14 @@ def alerta_stock_bajo() -> str:
     db = get_supabase_client()
 
     try:
-        result = db.table("productos").select(
-            "nombre, marca, talla, color, precio_unitario, "
-            "inventario(cantidad_actual, cantidad_minima)"
-        ).execute()
+        result = (
+            db.table("productos")
+            .select(
+                "nombre, marca, talla, color, precio_unitario, "
+                "inventario(cantidad_actual, cantidad_minima)"
+            )
+            .execute()
+        )
 
         if not result.data:
             return "📦 No hay productos registrados en el inventario."
@@ -60,8 +66,7 @@ def alerta_stock_bajo() -> str:
                 estado = "🔴 AGOTADO" if actual == 0 else "⚠️ BAJO"
 
                 criticos.append(
-                    f"{estado} {prod['nombre']}{variante}{marca_str}: "
-                    f"{actual} und. (mín: {minimo})"
+                    f"{estado} {prod['nombre']}{variante}{marca_str}: {actual} und. (mín: {minimo})"
                 )
 
         if not criticos:
@@ -74,6 +79,9 @@ def alerta_stock_bajo() -> str:
         logger.info("alerta_stock_bajo", num_criticos=len(criticos))
         return "\n".join(lines)
 
+    except DatabaseError as exc:
+        logger.error("tool_alerta_stock_bajo_db_error", error=str(exc))
+        return f"❌ Error de base de datos: {exc.message}"
     except Exception as exc:
         logger.error("tool_alerta_stock_bajo_failed", error=str(exc))
-        return f"❌ Error al revisar inventario: {str(exc)}"
+        return f"❌ Error al revisar inventario: {exc!s}"

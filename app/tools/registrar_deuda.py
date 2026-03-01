@@ -2,12 +2,15 @@
 
 Tool callable por el agente LangGraph para registrar cuando
 un cliente se lleva mercadería a crédito o debe dinero.
+Usa DeudaRepository para acceso a datos.
 """
 
 import structlog
 from langchain_core.tools import tool
 
 from app.core.database import get_supabase_client
+from app.core.exceptions import DatabaseError
+from app.repositories.deuda_repository import DeudaRepository
 
 logger = structlog.get_logger()
 
@@ -36,6 +39,7 @@ def registrar_deuda(
         Confirmación del registro de la deuda.
     """
     db = get_supabase_client()
+    deuda_repo = DeudaRepository(db)
 
     try:
         payload: dict = {
@@ -50,7 +54,7 @@ def registrar_deuda(
         if fecha_vencimiento:
             payload["fecha_vencimiento"] = fecha_vencimiento
 
-        db.table("deudas").insert(payload).execute()
+        deuda_repo.create(payload)
 
         vencimiento_str = f"\n• Vence: {fecha_vencimiento}" if fecha_vencimiento else ""
         logger.info(
@@ -67,6 +71,9 @@ def registrar_deuda(
             f"💡 Recuérdale cuando veas al cliente."
         )
 
+    except DatabaseError as exc:
+        logger.error("tool_registrar_deuda_db_error", error=str(exc))
+        return f"❌ Error de base de datos: {exc.message}"
     except Exception as exc:
         logger.error("tool_registrar_deuda_failed", error=str(exc))
-        return f"❌ Error al registrar deuda: {str(exc)}"
+        return f"❌ Error al registrar deuda: {exc!s}"

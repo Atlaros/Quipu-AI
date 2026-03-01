@@ -33,15 +33,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app: Instancia de FastAPI.
     """
     setup_logging(debug=settings.debug)
-    
+
     # Iniciar servicios globales
-    from app.services.redis_service import RedisService
-    await RedisService().connect()
-    
+    from app.services.redis_service import redis_service
+
+    await redis_service.connect()
+
     await logger.ainfo("quipu_ai_started", version=settings.app_version)
     yield
-    
-    await RedisService().close()
+
+    await redis_service.close()
     await logger.ainfo("quipu_ai_shutdown")
 
 

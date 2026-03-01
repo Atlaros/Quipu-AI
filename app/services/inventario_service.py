@@ -26,9 +26,7 @@ class InventarioService:
     def __init__(self, repository: InventarioRepository) -> None:
         self.repository = repository
 
-    async def consultar_stock(
-        self, producto_id: UUID
-    ) -> InventarioResponse:
+    async def consultar_stock(self, producto_id: UUID) -> InventarioResponse:
         """Consulta el stock de un producto.
 
         Args:

@@ -9,6 +9,7 @@ import structlog
 from langchain_core.tools import tool
 
 from app.core.database import get_supabase_client
+from app.core.exceptions import DatabaseError
 
 logger = structlog.get_logger()
 
@@ -47,8 +48,6 @@ def registrar_compra_proveedor(
 
     try:
         # Validación básica
-        if tuple(x.lower() for x in (nombre, talla, color)) == ("abarrotes", "", ""):
-             return "❌ No ingreses más abarrotes, solo ropa o calzado."
         if cantidad <= 0:
             return "❌ La cantidad ingresada debe ser mayor a 0."
         if precio_venta <= 0:
@@ -73,12 +72,17 @@ def registrar_compra_proveedor(
             producto_id = result_prod.data[0]["id"]
 
             # Actualizar precios
-            db.table("productos").update({
-                "precio_unitario": precio_venta,
-            }).eq("id", producto_id).execute()
+            db.table("productos").update({"precio_unitario": precio_venta}).eq(
+                "id", producto_id
+            ).execute()
 
             # Obtener inventario actual
-            inv_result = db.table("inventario").select("id, cantidad_actual").eq("producto_id", producto_id).execute()
+            inv_result = (
+                db.table("inventario")
+                .select("id, cantidad_actual")
+                .eq("producto_id", producto_id)
+                .execute()
+            )
 
             if inv_result.data:
                 inv_id = inv_result.data[0]["id"]
@@ -86,11 +90,16 @@ def registrar_compra_proveedor(
                 nuevo_stock = stock_actual + cantidad
 
                 # Actualizar stock
-                db.table("inventario").update({
-                    "cantidad_actual": nuevo_stock
-                }).eq("id", inv_id).execute()
+                db.table("inventario").update({"cantidad_actual": nuevo_stock}).eq(
+                    "id", inv_id
+                ).execute()
 
-                logger.info("stock_aumentado", producto_id=producto_id, sumado=cantidad, nuevo_stock=nuevo_stock)
+                logger.info(
+                    "stock_aumentado",
+                    producto_id=producto_id,
+                    sumado=cantidad,
+                    nuevo_stock=nuevo_stock,
+                )
                 return (
                     f"✅ **Stock actualizado (Ya existía):**\n"
                     f"• Producto: {nombre} {variante_str}\n"
@@ -99,17 +108,22 @@ def registrar_compra_proveedor(
                     f"• Nuevo Precio Venta: S/{precio_venta:.2f}"
                 )
             else:
-                # Caso raro: el producto existe pero no tiene registro de inventario, lo creamos
-                db.table("inventario").insert({
-                    "producto_id": producto_id,
-                    "cantidad_actual": cantidad,
-                    "cantidad_minima": 2
-                }).execute()
-                return f"✅ **Inventario creado para producto existente:** {nombre} {variante_str} (+{cantidad} und.)"
+                # Caso raro: producto existe pero sin inventario
+                db.table("inventario").insert(
+                    {
+                        "producto_id": producto_id,
+                        "cantidad_actual": cantidad,
+                        "cantidad_minima": 2,
+                    }
+                ).execute()
+                return (
+                    f"✅ **Inventario creado para producto existente:** "
+                    f"{nombre} {variante_str} (+{cantidad} und.)"
+                )
 
         else:
             # EL PRODUCTO NO EXISTE -> CREARLO
-            nuevo_prod = {
+            nuevo_prod: dict = {
                 "nombre": nombre,
                 "precio_unitario": precio_venta,
             }
@@ -123,17 +137,21 @@ def registrar_compra_proveedor(
             crear_result = db.table("productos").insert(nuevo_prod).execute()
 
             if not crear_result.data:
-                 return "❌ Error al crear el nuevo producto en la base de datos."
+                return "❌ Error al crear el nuevo producto en la base de datos."
 
             nuevo_id = crear_result.data[0]["id"]
 
-            # El trigger de la BD crea un registro en inventario por defecto (con 10).
+            # El trigger de la BD crea un registro en inventario por defecto.
             # Lo actualizamos con la cantidad real recibida en la compra.
-            db.table("inventario").update({
-                "cantidad_actual": cantidad
-            }).eq("producto_id", nuevo_id).execute()
+            db.table("inventario").update({"cantidad_actual": cantidad}).eq(
+                "producto_id", nuevo_id
+            ).execute()
 
-            logger.info("nuevo_producto_creado", producto_id=nuevo_id, costo=precio_costo)
+            logger.info(
+                "nuevo_producto_creado",
+                producto_id=nuevo_id,
+                costo=precio_costo,
+            )
 
             return (
                 f"✨ **¡Producto NUEVO ingresado al catálogo!**\n"
@@ -143,6 +161,9 @@ def registrar_compra_proveedor(
                 f"• Precio de Venta: S/{precio_venta:.2f}"
             )
 
+    except DatabaseError as exc:
+        logger.error("tool_registrar_compra_db_error", error=str(exc))
+        return f"❌ Error de base de datos: {exc.message}"
     except Exception as exc:
         logger.error("tool_registrar_compra_proveedor_failed", error=str(exc))
-        return f"❌ Error al registrar compra: {str(exc)}"
+        return f"❌ Error al registrar compra: {exc!s}"

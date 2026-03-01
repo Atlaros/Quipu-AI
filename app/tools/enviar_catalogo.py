@@ -2,12 +2,15 @@
 
 Tool callable por el agente LangGraph para mostrar al cliente
 el catálogo completo de productos disponibles con stock.
+Usa ProductoRepository.buscar_catalogo() para acceso a datos.
 """
 
 import structlog
 from langchain_core.tools import tool
 
 from app.core.database import get_supabase_client
+from app.core.exceptions import DatabaseError
+from app.repositories.producto_repository import ProductoRepository
 
 logger = structlog.get_logger()
 
@@ -27,27 +30,22 @@ def enviar_catalogo(categoria: str = "") -> str:
         Catálogo formateado con productos disponibles y precios.
     """
     db = get_supabase_client()
+    producto_repo = ProductoRepository(db)
 
     try:
-        query = db.table("productos").select(
-            "nombre, marca, talla, color, precio_unitario, "
-            "inventario(cantidad_actual)"
-        )
+        productos = producto_repo.buscar_catalogo(categoria, limit=15)
 
-        if categoria:
-            query = query.or_(
-                f"nombre.ilike.%{categoria}%,marca.ilike.%{categoria}%"
+        if not productos:
+            msg = (
+                f"No tenemos productos en la categoría '{categoria}'."
+                if categoria
+                else "El catálogo está vacío."
             )
-
-        result = query.limit(15).execute()
-
-        if not result.data:
-            msg = f"No tenemos productos en la categoría '{categoria}'." if categoria else "El catálogo está vacío."
             return f"❌ {msg}"
 
         # Filtrar solo productos con stock
         disponibles = []
-        for prod in result.data:
+        for prod in productos:
             inv = prod.get("inventario")
             if isinstance(inv, list) and inv:
                 inv = inv[0]
@@ -74,11 +72,18 @@ def enviar_catalogo(categoria: str = "") -> str:
             lines.append(f"👟 **{prod['nombre']}{variante}**{marca}")
             lines.append(f"   💰 S/{precio:.2f} | 📦 {stock} disponibles")
 
-        lines.append(f"\n¿Te interesa alguno? Dime talla y color 😊")
+        lines.append("\n¿Te interesa alguno? Dime talla y color 😊")
 
-        logger.info("catalogo_enviado", num_productos=len(disponibles), categoria=categoria)
+        logger.info(
+            "catalogo_enviado",
+            num_productos=len(disponibles),
+            categoria=categoria,
+        )
         return "\n".join(lines)
 
+    except DatabaseError as exc:
+        logger.error("tool_enviar_catalogo_db_error", error=str(exc))
+        return f"❌ Error de base de datos: {exc.message}"
     except Exception as exc:
         logger.error("tool_enviar_catalogo_failed", error=str(exc))
-        return f"❌ Error al cargar el catálogo: {str(exc)}"
+        return f"❌ Error al cargar el catálogo: {exc!s}"

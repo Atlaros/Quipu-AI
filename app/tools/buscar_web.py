@@ -58,4 +58,4 @@ def buscar_web(query: str) -> str:
         return "⚠️ Módulo 'tavily-python' no instalado. Ejecuta: uv pip install tavily-python"
     except Exception as exc:
         logger.error("tool_buscar_web_failed", query=query, error=str(exc))
-        return f"❌ Error al buscar: {str(exc)}"
+        return f"❌ Error al buscar: {exc!s}"

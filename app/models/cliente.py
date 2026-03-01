@@ -34,9 +34,7 @@ class ClienteCreate(BaseModel):
     )
 
     nombre: str = Field(..., min_length=2, max_length=200)
-    telefono: str = Field(
-        ..., pattern=r"^\+\d{10,15}$", description="Formato: +51999111222"
-    )
+    telefono: str = Field(..., pattern=r"^\+\d{10,15}$", description="Formato: +51999111222")
     direccion: str = Field(default="", max_length=500)
     notas: str = Field(default="", max_length=1000)
 
