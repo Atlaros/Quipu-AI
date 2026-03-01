@@ -2,7 +2,7 @@
 
 Tool callable por el agente LangGraph para mostrar al cliente
 el catálogo completo de productos disponibles con stock.
-Usa ProductoRepository.buscar_catalogo() para acceso a datos.
+Agrupa por categoría y muestra detalles de variantes.
 """
 
 import structlog
@@ -14,6 +14,28 @@ from app.repositories.producto_repository import ProductoRepository
 
 logger = structlog.get_logger()
 
+# Emojis por categoría para un catálogo visualmente atractivo
+CATEGORIA_EMOJI: dict[str, str] = {
+    "calzado": "👟",
+    "zapatillas": "👟",
+    "zapatos": "👟",
+    "ropa": "👕",
+    "polos": "👕",
+    "camisas": "👔",
+    "jeans": "👖",
+    "pantalones": "👖",
+    "casacas": "🧥",
+    "chaquetas": "🧥",
+    "accesorios": "🎒",
+    "general": "🏷️",
+}
+
+
+def _emoji_para(categoria: str) -> str:
+    """Retorna el emoji apropiado para la categoría."""
+    cat_lower = categoria.lower().strip()
+    return CATEGORIA_EMOJI.get(cat_lower, "🏷️")
+
 
 @tool
 def enviar_catalogo(categoria: str = "") -> str:
@@ -23,17 +45,17 @@ def enviar_catalogo(categoria: str = "") -> str:
     o pregunte qué productos maneja la tienda.
 
     Args:
-        categoria: Categoría a filtrar (ej: "zapatillas", "polo", "jean").
+        categoria: Categoría a filtrar (ej: "calzado", "ropa", "jeans").
                    Vacío = mostrar todo el catálogo.
 
     Returns:
-        Catálogo formateado con productos disponibles y precios.
+        Catálogo formateado agrupado por categoría con precios y stock.
     """
     db = get_supabase_client()
     producto_repo = ProductoRepository(db)
 
     try:
-        productos = producto_repo.buscar_catalogo(categoria, limit=15)
+        productos = producto_repo.buscar_catalogo(categoria, limit=20)
 
         if not productos:
             msg = (
@@ -43,41 +65,56 @@ def enviar_catalogo(categoria: str = "") -> str:
             )
             return f"❌ {msg}"
 
-        # Filtrar solo productos con stock
-        disponibles = []
+        # Filtrar solo con stock y agrupar por categoría
+        por_categoria: dict[str, list[tuple[dict, int]]] = {}
         for prod in productos:
             inv = prod.get("inventario")
             if isinstance(inv, list) and inv:
                 inv = inv[0]
             stock = inv.get("cantidad_actual", 0) if isinstance(inv, dict) else 0
-            if stock > 0:
-                disponibles.append((prod, stock))
+            if stock <= 0:
+                continue
 
-        if not disponibles:
+            cat = prod.get("categoria", "General") or "General"
+            if cat not in por_categoria:
+                por_categoria[cat] = []
+            por_categoria[cat].append((prod, stock))
+
+        if not por_categoria:
             return "❌ Todos los productos están sin stock por el momento."
 
-        titulo = f"📋 **Catálogo{'— ' + categoria if categoria else ''}:**"
-        lines = [titulo, ""]
+        # Construir catálogo agrupado
+        total_productos = sum(len(items) for items in por_categoria.values())
+        lines = [f"🛍️ **Catálogo Disponible** ({total_productos} productos):", ""]
 
-        for prod, stock in disponibles:
-            detalles = []
-            if prod.get("talla"):
-                detalles.append(f"T{prod['talla']}")
-            if prod.get("color"):
-                detalles.append(prod["color"])
-            variante = f" ({', '.join(detalles)})" if detalles else ""
-            marca = f" [{prod['marca']}]" if prod.get("marca") else ""
-            precio = float(prod.get("precio_unitario", 0))
+        for cat, items in por_categoria.items():
+            emoji = _emoji_para(cat)
+            lines.append(f"{emoji} **{cat.upper()}**:")
 
-            lines.append(f"👟 **{prod['nombre']}{variante}**{marca}")
-            lines.append(f"   💰 S/{precio:.2f} | 📦 {stock} disponibles")
+            for prod, stock in items:
+                nombre = prod["nombre"]
+                detalles = []
+                if prod.get("talla"):
+                    detalles.append(f"T{prod['talla']}")
+                if prod.get("color"):
+                    detalles.append(prod["color"])
+                variante = f" ({', '.join(detalles)})" if detalles else ""
+                marca = f" *{prod['marca']}*" if prod.get("marca") else ""
+                precio = float(prod.get("precio_unitario", 0))
 
-        lines.append("\n¿Te interesa alguno? Dime talla y color 😊")
+                alerta = " ⚠️" if stock <= 5 else ""
+                lines.append(
+                    f"  • {nombre}{variante}{marca} — S/{precio:.2f} | {stock} und.{alerta}"
+                )
+
+            lines.append("")  # Línea vacía entre categorías
+
+        lines.append("¿Te interesa alguno? Dime cuál y tu talla 😊")
 
         logger.info(
             "catalogo_enviado",
-            num_productos=len(disponibles),
-            categoria=categoria,
+            num_productos=total_productos,
+            categorias=list(por_categoria.keys()),
         )
         return "\n".join(lines)
 
