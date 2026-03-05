@@ -32,7 +32,7 @@ graph LR
     WA[📱 WhatsApp] -->|Webhook| META[Meta Cloud API]
     META -->|POST /webhook| API[FastAPI]
     API -->|HMAC-SHA256| SEC{Verificación}
-    SEC -->|✅| HIST[Historial]
+    SEC -->|✅| HIST[Historial Redis]
     HIST --> AGENT[LangGraph Agent]
     AGENT -->|Tool Call| TOOLS[🔧 15 Tools]
     TOOLS -->|Repository Layer| DB[(Supabase)]
@@ -45,14 +45,25 @@ graph LR
 | Capa | Tecnología | Justificación |
 |---|---|---|
 | **API** | FastAPI | Async, tipado, auto-docs |
-| **Agente** | LangGraph + Groq (Llama 3.3, Mixtral) | ReAct pattern, cascada con fallback a OpenRouter |
+| **Agente** | LangGraph + Groq (Qwen3-32B, Llama 3.3, Llama 3.1) | ReAct pattern, cascada con fallback a OpenRouter |
 | **Base de Datos** | Supabase (PostgreSQL) | REST API, auth, RLS |
 | **Cache** | Redis | Historial de conversaciones, deduplicación |
 | **Mensajería** | WhatsApp Business Cloud API | Canal principal |
 | **Observabilidad** | structlog (JSON) | Logs estructurados para producción |
-| **Testing** | pytest + pytest-mock + pytest-cov | 44+ tests (unit + integration) |
+| **Testing** | pytest + pytest-mock + pytest-cov | 79 tests (unit + integration) |
 | **CI/CD** | GitHub Actions | Ruff lint + format + tests con coverage |
+| **Deploy** | Render (Docker) | Web service + Redis managed |
 | **Gestión deps** | uv (Astral) | 10x más rápido que pip |
+
+### Cascada de LLMs
+
+El agente usa una estrategia de **fallback en cascada** para máxima disponibilidad:
+
+```
+Groq (Qwen3-32B → Llama 3.3-70B → Llama 3.1-8B)
+  ↓ si todos fallan
+OpenRouter (DeepSeek V3 → Nemotron 70B → Auto)
+```
 
 ---
 
@@ -104,7 +115,10 @@ cp .env.example .env
 ### 3. Ejecutar
 
 ```bash
-# Server
+# Server local
+make run-local
+
+# O manualmente
 uv run uvicorn main:app --port 8000 --reload
 
 # Tests
@@ -115,7 +129,7 @@ uv run pytest tests/ -v --cov=app
 
 ```bash
 # Tunnel para exponer el server a Meta
-ngrok http 8000
+make ngrok
 
 # Configurar la URL pública en Meta Developer > Webhook
 ```
@@ -128,34 +142,46 @@ ngrok http 8000
 quipu-ai/
 ├── app/
 │   ├── agent/
-│   │   ├── graph.py          # Grafo LangGraph (ReAct + cascada LLM)
-│   │   └── state.py          # Estado del agente
-│   ├── api/v1/
-│   │   ├── chat.py            # POST /chat (test directo)
-│   │   ├── clientes.py        # CRUD clientes
-│   │   ├── health.py          # GET /health
-│   │   ├── inventario.py      # CRUD inventario (talla, color, marca)
-│   │   ├── productos.py       # CRUD productos con variantes
-│   │   ├── ventas.py          # CRUD ventas
-│   │   └── webhook.py         # WhatsApp webhook (HMAC + historial)
+│   │   ├── graph.py              # Grafo LangGraph (ReAct + cascada LLM)
+│   │   └── state.py              # Estado del agente
+│   ├── api/
+│   │   ├── dependencies.py       # Inyección de dependencias
+│   │   └── v1/
+│   │       ├── chat.py           # POST /chat (test directo)
+│   │       ├── clientes.py       # CRUD clientes
+│   │       ├── health.py         # GET /health
+│   │       ├── inventario.py     # CRUD inventario (talla, color, marca)
+│   │       ├── productos.py      # CRUD productos con variantes
+│   │       ├── ventas.py         # CRUD ventas
+│   │       └── webhook.py        # WhatsApp webhook (HMAC + historial)
 │   ├── core/
-│   │   ├── config.py          # Settings (Pydantic)
-│   │   ├── database.py        # Supabase client (singleton)
-│   │   ├── exceptions.py      # Custom exceptions
-│   │   └── logging.py         # structlog config
-│   ├── repositories/          # Capa de datos (Supabase queries)
-│   ├── services/              # Lógica de negocio + Redis + WhatsApp
-│   └── tools/                 # 15 LangGraph tools
+│   │   ├── config.py             # Settings (Pydantic)
+│   │   ├── database.py           # Supabase client (singleton)
+│   │   ├── exceptions.py         # Custom exceptions
+│   │   └── logging.py            # structlog config
+│   ├── models/                   # Pydantic schemas (request/response)
+│   │   ├── cliente.py
+│   │   ├── inventario.py
+│   │   ├── producto.py
+│   │   └── venta.py
+│   ├── repositories/             # Capa de datos (Supabase queries)
+│   ├── services/                 # Lógica de negocio + Redis + WhatsApp
+│   └── tools/                    # 15 LangGraph tools
 ├── scripts/
-│   ├── sql/                   # Migrations y schemas
-│   └── verify/                # Scripts de verificación manual
+│   ├── sql/                      # Schemas SQL
+│   └── verify/                   # Scripts de verificación manual
 ├── tests/
-│   ├── unit/                  # Tests unitarios (services + tools)
-│   └── integration/           # Tests de integración (webhook flow)
-├── .github/workflows/ci.yml   # GitHub Actions (lint + format + tests + coverage)
-├── Dockerfile                 # Multi-stage (uv + slim)
-├── main.py                    # App factory
-└── pyproject.toml             # Dependencias + Ruff + mypy + pytest
+│   ├── conftest.py               # Fixtures compartidas
+│   ├── unit/                     # Tests unitarios (services + tools)
+│   └── integration/              # Tests de integración (webhook flow)
+├── reports/                      # Reportes generados (PNG/CSV)
+├── .github/workflows/ci.yml      # GitHub Actions (lint + format + tests + coverage)
+├── Dockerfile                    # Multi-stage (uv + slim)
+├── docker-compose.yml            # App + Redis para desarrollo local
+├── render.yaml                   # Deploy a Render (web + Redis)
+├── Makefile                      # Comandos: install, run-local, run-docker, ngrok, clean
+├── main.py                       # App factory
+└── pyproject.toml                # Dependencias + Ruff + mypy + pytest
 ```
 
 ---
@@ -164,7 +190,8 @@ quipu-ai/
 
 | Método | Endpoint | Descripción |
 |---|---|---|
-| `GET` | `/health` | Health check |
+| `GET` | `/healthz` | Health check (root) |
+| `GET` | `/api/v1/health` | Health check (v1) |
 | `POST` | `/api/v1/chat/` | Chat directo con el agente |
 | `GET` | `/api/v1/webhook/` | Verificación de Meta |
 | `POST` | `/api/v1/webhook/` | Recibir mensajes de WhatsApp |
@@ -181,12 +208,46 @@ quipu-ai/
 
 ## 🐳 Docker
 
+### Desarrollo local (con Redis)
+
+```bash
+docker compose up -d
+```
+
+### Solo la API
+
 ```bash
 # Build
 docker build -t quipu-ai .
 
 # Run
 docker run -p 8000:8000 --env-file .env quipu-ai
+```
+
+### Makefile
+
+```bash
+make help           # Ver todos los comandos
+make install        # uv sync
+make run-local      # Servidor local con hot-reload
+make run-docker     # Build + run Docker
+make ngrok          # Túnel para WhatsApp webhook
+make clean          # Limpiar caches
+```
+
+---
+
+## ☁️ Deploy (Render)
+
+El proyecto incluye `render.yaml` para deploy automático en [Render](https://render.com):
+
+- **Web Service**: Docker con la API FastAPI
+- **Redis**: Instancia managed para cache y deduplicación
+- **Health Check**: `/healthz`
+
+```bash
+# Deploy automático al hacer push a master
+git push origin master
 ```
 
 ---
@@ -202,6 +263,9 @@ uv run pytest tests/ --cov=app --cov-report=term-missing
 
 # Solo tools
 uv run pytest tests/unit/test_tools_*.py -v
+
+# Solo services
+uv run pytest tests/unit/test_*_service.py -v
 ```
 
 ---

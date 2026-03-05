@@ -4,8 +4,8 @@ Punto de entrada de la aplicación FastAPI.
 Configura middleware, routers, logging, y exception handlers.
 """
 
-from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 import structlog
 from fastapi import FastAPI, Request
@@ -16,6 +16,7 @@ from app.api.v1.clientes import router as clientes_router
 from app.api.v1.health import router as health_router
 from app.api.v1.inventario import router as inventario_router
 from app.api.v1.productos import router as productos_router
+from app.api.v1.telegram_webhook import router as telegram_router
 from app.api.v1.ventas import router as ventas_router
 from app.api.v1.webhook import router as webhook_router
 from app.core.config import settings
@@ -76,7 +77,7 @@ def create_app() -> FastAPI:
 
     # --- Routers V1 ---
     api_v1_router = APIRouter(prefix="/api/v1")
-    
+
     # El health check puede quedar en root también si se desea, pero lo estandarizamos en v1
     # Opcional: Rutas globales
     @app.get("/healthz", tags=["Health"])
@@ -90,6 +91,7 @@ def create_app() -> FastAPI:
     api_v1_router.include_router(productos_router)
     api_v1_router.include_router(chat_router)
     api_v1_router.include_router(webhook_router)
+    api_v1_router.include_router(telegram_router)
 
     app.include_router(api_v1_router)
 

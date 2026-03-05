@@ -63,6 +63,10 @@ class Settings(BaseSettings):
     whatsapp_verify_token: str = "quipu-ai-verify-2026"
     whatsapp_app_secret: str = ""  # Para verificar firma HMAC de Meta
 
+    # Telegram Bot API
+    telegram_bot_token: str = ""
+    telegram_webhook_secret: str = ""  # Secret para validar updates
+
 
 # Singleton: importar esta instancia en todo el proyecto
 settings = Settings()

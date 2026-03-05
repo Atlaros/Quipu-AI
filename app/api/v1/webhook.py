@@ -17,10 +17,8 @@ import structlog
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse
 
-from app.agent.graph import agent
 from app.core.config import settings
-from app.repositories.conversation_repository import ConversationRepository
-from app.services.redis_service import redis_service
+from app.services.message_processor import MessageProcessor
 from app.services.whatsapp_service import WhatsAppService
 
 logger = structlog.get_logger()
@@ -28,7 +26,7 @@ logger = structlog.get_logger()
 router = APIRouter(prefix="/webhook", tags=["WhatsApp Webhook"])
 
 wa_service = WhatsAppService()
-conversation_repo = ConversationRepository(redis=redis_service)
+processor = MessageProcessor()
 
 
 def _verify_signature(payload: bytes, signature: str) -> bool:
@@ -149,7 +147,7 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks) -
 
 
 async def _process_message(message_data: dict) -> None:
-    """Procesa el mensaje, invoca el agente y envía la respuesta por WhatsApp.
+    """Procesa el mensaje de WhatsApp: media → texto → agente → respuesta.
 
     Se ejecuta en background para no bloquear el webhook y evitar reintentos de Meta.
 
@@ -161,7 +159,7 @@ async def _process_message(message_data: dict) -> None:
     message_id = message_data["message_id"]
     name = message_data.get("name", "")
 
-    # Marcar mensaje como leído
+    # Marcar mensaje como leído (doble check azul)
     await wa_service.mark_as_read(message_id)
 
     # Procesar según tipo de mensaje
@@ -230,60 +228,44 @@ async def _process_message(message_data: dict) -> None:
         msg_type=msg_type,
     )
 
-    try:
-        from langchain_core.messages import AIMessage, HumanMessage
+    # Delegar al procesador agnóstico de canal
+    await processor.process(
+        user_id=phone,
+        text=text,
+        name=name,
+        channel="whatsapp",
+        send_text_fn=_wa_send_text,
+        send_image_fn=_wa_send_image,
+    )
 
-        history = await conversation_repo.get_history(phone)
-        messages: list = []
-        for msg in history:
-            if msg["role"] == "human":
-                messages.append(HumanMessage(content=msg["content"]))
-            elif msg["role"] == "ai":
-                messages.append(AIMessage(content=msg["content"]))
 
-        messages.append(HumanMessage(content=text))
+async def _wa_send_text(to: str, text: str) -> bool:
+    """Callback de envío de texto para WhatsApp.
 
-        result = agent.invoke({"messages": messages})
+    Args:
+        to: Número de teléfono del destinatario.
+        text: Texto a enviar.
 
-        last_msg = result["messages"][-1]
-        if isinstance(last_msg.content, str):
-            response_text = last_msg.content
-        elif isinstance(last_msg.content, list):
-            response_text = " ".join(
-                part.get("text", "")
-                for part in last_msg.content
-                if isinstance(part, dict) and "text" in part
-            )
-        else:
-            response_text = str(last_msg.content)
+    Returns:
+        True si se envió correctamente.
+    """
+    return await wa_service.send_message(to=to, text=text)
 
-        await conversation_repo.save_message(phone, "human", text)
-        await conversation_repo.save_message(phone, "ai", response_text)
 
-    except Exception as exc:
-        logger.error("webhook_agent_failed", error=str(exc))
-        response_text = (
-            "⚠️ Hubo un problema procesando tu mensaje. Intenta de nuevo en unos segundos."
-        )
+async def _wa_send_image(to: str, image_path: str, caption: str) -> bool:
+    """Callback de envío de imagen para WhatsApp.
 
-    # Enviar respuesta (texto o imagen)
-    if response_text.startswith("[IMAGE:"):
-        try:
-            end_idx = response_text.find("]")
-            if end_idx != -1:
-                image_path = response_text[7:end_idx]
-                caption = response_text[end_idx + 1 :].strip()
-            else:
-                image_path = response_text.replace("[IMAGE:", "")
-                caption = ""
+    Sube la imagen a la Media API de Meta y luego la envía.
 
-            media_id = await wa_service.upload_media(image_path)
-            if media_id:
-                await wa_service.send_image(to=phone, media_id=media_id, caption=caption)
-            else:
-                await wa_service.send_message(to=phone, text=caption or response_text)
-        except (ValueError, OSError) as exc:
-            logger.error("webhook_image_send_failed", error=str(exc))
-            await wa_service.send_message(to=phone, text=response_text)
-    else:
-        await wa_service.send_message(to=phone, text=response_text)
+    Args:
+        to: Número de teléfono del destinatario.
+        image_path: Ruta local de la imagen.
+        caption: Texto descriptivo.
+
+    Returns:
+        True si se envió correctamente.
+    """
+    media_id = await wa_service.upload_media(image_path)
+    if media_id:
+        return await wa_service.send_image(to=to, media_id=media_id, caption=caption)
+    return False
