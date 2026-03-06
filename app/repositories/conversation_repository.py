@@ -4,6 +4,7 @@ Persiste mensajes (human/ai) en Supabase para que el agente
 tenga contexto entre mensajes del mismo usuario.
 """
 
+import contextlib
 import json
 
 import redis.exceptions as redis_exc
@@ -107,10 +108,23 @@ class ConversationRepository:
                 model_length=len(content),
             )
 
-            # 2. Invalidar caché
+            # 2. Actualizar caché (append + trim) en vez de invalidar
             if self.redis:
                 cache_key = f"chat_history:{phone}"
-                await self.redis.delete(cache_key)
+                try:
+                    cached = await self.redis.get(cache_key)
+                    history = json.loads(cached) if cached else []
+                    history.append({"role": role, "content": content})
+                    # Mantener solo los últimos N mensajes
+                    history = history[-MAX_HISTORY_MESSAGES:]
+                    await self.redis.set(
+                        cache_key, json.dumps(history), expire=CACHE_TTL
+                    )
+                except redis_exc.RedisError as exc:
+                    # Si falla Redis, solo invalidar — el próximo read irá a DB
+                    logger.warning("redis_cache_update_failed", error=str(exc))
+                    with contextlib.suppress(redis_exc.RedisError):
+                        await self.redis.delete(cache_key)
 
         except APIError as exc:
             logger.error(
