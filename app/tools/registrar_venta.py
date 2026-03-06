@@ -7,7 +7,7 @@ en Supabase. Usa repositorios en vez de queries directas.
 import structlog
 from langchain_core.tools import tool
 
-from app.core.database import get_supabase_client
+from app.core.database import get_supabase_client, sanitize_postgrest_value
 from app.core.exceptions import DatabaseError
 
 logger = structlog.get_logger()
@@ -38,7 +38,8 @@ def registrar_venta(
     try:
         # 1. Buscar producto con variantes (via repository)
         query = db.table("productos").select("id, nombre, precio_unitario, talla, color")
-        query = query.or_(f"nombre.ilike.%{producto_nombre}%,marca.ilike.%{producto_nombre}%")
+        safe_name = sanitize_postgrest_value(producto_nombre)
+        query = query.or_(f"nombre.ilike.%{safe_name}%,marca.ilike.%{safe_name}%")
 
         if talla:
             query = query.eq("talla", talla)

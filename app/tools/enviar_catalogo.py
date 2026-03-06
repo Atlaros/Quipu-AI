@@ -8,7 +8,7 @@ Agrupa por categoría y muestra detalles de variantes.
 import structlog
 from langchain_core.tools import tool
 
-from app.core.database import get_supabase_client
+from app.core.database import get_supabase_client, sanitize_postgrest_value
 from app.core.exceptions import DatabaseError
 
 logger = structlog.get_logger()
@@ -59,10 +59,11 @@ def enviar_catalogo(categoria: str = "") -> str:
             " inventario(cantidad_actual)"
         )
         if categoria:
+            safe_cat = sanitize_postgrest_value(categoria)
             query = query.or_(
-                f"nombre.ilike.%{categoria}%,"
-                f"marca.ilike.%{categoria}%,"
-                f"categoria.ilike.%{categoria}%"
+                f"nombre.ilike.%{safe_cat}%,"
+                f"marca.ilike.%{safe_cat}%,"
+                f"categoria.ilike.%{safe_cat}%"
             )
         result = query.eq("activo", True).limit(20).execute()
         productos = result.data if result.data else []

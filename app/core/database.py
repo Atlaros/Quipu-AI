@@ -11,6 +11,26 @@ from app.core.config import settings
 _supabase_client: Client | None = None
 
 
+def sanitize_postgrest_value(value: str) -> str:
+    """Sanitiza un valor para usarlo en filtros PostgREST `or_()`.
+
+    PostgREST usa paréntesis y comas como delimitadores de lógica.
+    Si el valor del usuario los contiene, el parser falla con PGRST100.
+
+    Args:
+        value: Valor crudo del usuario (ej: "Dunk Low (T41, Negro) Nike").
+
+    Returns:
+        Valor limpio sin caracteres problemáticos.
+    """
+    import re
+
+    # Quitar paréntesis, comas, y puntos que rompen PostgREST
+    cleaned = re.sub(r"[(),.]", " ", value)
+    # Colapsar espacios múltiples
+    return re.sub(r"\s+", " ", cleaned).strip()
+
+
 def get_supabase_client() -> Client:
     """Retorna el cliente singleton de Supabase.
 
