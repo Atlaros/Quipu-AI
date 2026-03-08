@@ -117,9 +117,7 @@ class ConversationRepository:
                     history.append({"role": role, "content": content})
                     # Mantener solo los últimos N mensajes
                     history = history[-MAX_HISTORY_MESSAGES:]
-                    await self.redis.set(
-                        cache_key, json.dumps(history), expire=CACHE_TTL
-                    )
+                    await self.redis.set(cache_key, json.dumps(history), expire=CACHE_TTL)
                 except redis_exc.RedisError as exc:
                     # Si falla Redis, solo invalidar — el próximo read irá a DB
                     logger.warning("redis_cache_update_failed", error=str(exc))

@@ -5,6 +5,7 @@ Mucho más rápido y estable que Gemini Free Tier.
 """
 
 import base64
+import contextlib
 import tempfile
 from pathlib import Path
 
@@ -72,11 +73,8 @@ class MediaService:
             return ""
         finally:
             tmp_path.unlink(missing_ok=True)
-            if tmp_path.parent.exists():
-                try:
-                    tmp_path.parent.rmdir()
-                except OSError:
-                    pass
+            with contextlib.suppress(OSError):
+                tmp_path.parent.rmdir()
 
     async def process_image(self, image_bytes: bytes, mime_type: str = "image/jpeg") -> str:
         """Describe una imagen usando Gemini 1.5 Flash (Groq deprecó sus modelos de visión).

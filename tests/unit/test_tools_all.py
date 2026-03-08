@@ -9,7 +9,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ──────────────────────────────────────────────
 # Fixtures reutilizables
 # ──────────────────────────────────────────────
@@ -190,9 +189,7 @@ class TestCalcularDescuento:
         """20% de descuento sobre S/100 = S/80."""
         from app.tools.calcular_descuento import calcular_descuento
 
-        result = calcular_descuento.invoke(
-            {"precio_original": 100.0, "descuento_porcentaje": 20.0}
-        )
+        result = calcular_descuento.invoke({"precio_original": 100.0, "descuento_porcentaje": 20.0})
 
         assert "S/80.00" in result
         assert "S/20.00" in result  # ahorro
@@ -213,9 +210,7 @@ class TestCalcularDescuento:
         """Debe rechazar precio <= 0."""
         from app.tools.calcular_descuento import calcular_descuento
 
-        result = calcular_descuento.invoke(
-            {"precio_original": 0.0, "descuento_porcentaje": 10.0}
-        )
+        result = calcular_descuento.invoke({"precio_original": 0.0, "descuento_porcentaje": 10.0})
         assert "❌" in result
 
     def test_descuento_invalido(self) -> None:
@@ -594,9 +589,7 @@ class TestRegistrarCliente:
         )
         mock_get.return_value = mock_supabase
 
-        result = registrar_cliente.invoke(
-            {"nombre": "Luis", "telefono": "51987000000"}
-        )
+        result = registrar_cliente.invoke({"nombre": "Luis", "telefono": "51987000000"})
 
         assert "✅" in result or "Luis" in result
 
@@ -610,11 +603,9 @@ class TestRegistrarCliente:
         mock_supabase.table.return_value = q
         mock_get.return_value = mock_supabase
 
-        result = registrar_cliente.invoke(
-            {"nombre": "María", "telefono": "51987111111"}
-        )
+        result = registrar_cliente.invoke({"nombre": "María", "telefono": "51987111111"})
 
-        assert "Ya existe" in result or "ℹ️" in result
+        assert "Ya existe" in result or "📋" in result
 
 
 # ══════════════════════════════════════════════
@@ -773,8 +764,6 @@ class TestRegistrarDeuda:
         mock_supabase.table.side_effect = Exception("DB down")
         mock_get.return_value = mock_supabase
 
-        result = registrar_deuda.invoke(
-            {"cliente_nombre": "X", "descripcion": "Y", "monto": 10.0}
-        )
+        result = registrar_deuda.invoke({"cliente_nombre": "X", "descripcion": "Y", "monto": 10.0})
 
         assert "❌" in result

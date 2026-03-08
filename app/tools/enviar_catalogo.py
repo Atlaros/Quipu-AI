@@ -55,15 +55,12 @@ def enviar_catalogo(categoria: str = "") -> str:
     try:
         # Query directa (sync) — los repos son async, tools son sync
         query = db.table("productos").select(
-            "nombre, marca, categoria, talla, color, precio_unitario,"
-            " inventario(cantidad_actual)"
+            "nombre, marca, categoria, talla, color, precio_unitario, inventario(cantidad_actual)"
         )
         if categoria:
             safe_cat = sanitize_postgrest_value(categoria)
             query = query.or_(
-                f"nombre.ilike.%{safe_cat}%,"
-                f"marca.ilike.%{safe_cat}%,"
-                f"categoria.ilike.%{safe_cat}%"
+                f"nombre.ilike.%{safe_cat}%,marca.ilike.%{safe_cat}%,categoria.ilike.%{safe_cat}%"
             )
         result = query.eq("activo", True).limit(20).execute()
         productos = result.data if result.data else []
@@ -115,8 +112,7 @@ def enviar_catalogo(categoria: str = "") -> str:
 
                 alerta = " ⚠️" if stock <= 5 else ""
                 lines.append(
-                    f"  • {nombre}{variante}{marca}"
-                    f" — S/{precio:.2f} | {stock} und.{alerta}"
+                    f"  • {nombre}{variante}{marca} — S/{precio:.2f} | {stock} und.{alerta}"
                 )
 
             lines.append("")  # Línea vacía entre categorías

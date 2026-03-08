@@ -38,7 +38,7 @@ def registrar_cliente(nombre: str, telefono: str = "") -> str:
             )
 
             if existente.data:
-                return f"ℹ️ Ya existe un cliente con ese teléfono: {existente.data[0]['nombre']}"
+                return f"📋 Ya existe un cliente con ese teléfono: {existente.data[0]['nombre']}"
 
         # Insertar nuevo cliente
         payload: dict[str, str] = {"nombre": nombre}

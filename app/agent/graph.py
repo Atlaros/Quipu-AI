@@ -223,7 +223,7 @@ def build_agent_graph() -> StateGraph:
 
         messages = state["messages"]
         if not messages or not isinstance(messages[0], SystemMessage):
-            messages = [SystemMessage(content=SYSTEM_PROMPT)] + list(messages)
+            messages = [SystemMessage(content=SYSTEM_PROMPT), *messages]
 
         response = _invoke_llm_with_fallback(messages)
         return {"messages": [response]}

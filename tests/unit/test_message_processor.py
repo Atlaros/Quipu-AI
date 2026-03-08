@@ -113,9 +113,7 @@ class TestProcess:
                 "save_message",
                 new_callable=AsyncMock,
             ) as mock_save,
-            patch(
-                "app.services.message_processor.agent"
-            ) as mock_agent,
+            patch("app.services.message_processor.agent") as mock_agent,
         ):
             mock_agent.invoke.return_value = {"messages": [mock_response]}
 
@@ -158,9 +156,7 @@ class TestProcess:
                 new_callable=AsyncMock,
                 return_value=[],
             ),
-            patch(
-                "app.services.message_processor.agent"
-            ) as mock_agent,
+            patch("app.services.message_processor.agent") as mock_agent,
         ):
             mock_agent.invoke.side_effect = RuntimeError("LLM unavailable")
 
@@ -207,9 +203,7 @@ class TestProcess:
                 "save_message",
                 new_callable=AsyncMock,
             ),
-            patch(
-                "app.services.message_processor.agent"
-            ) as mock_agent,
+            patch("app.services.message_processor.agent") as mock_agent,
         ):
             mock_agent.invoke.return_value = {"messages": [mock_response]}
 

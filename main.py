@@ -62,15 +62,11 @@ def create_app() -> FastAPI:
 
     # --- Exception Handlers ---
     @app.exception_handler(ResourceNotFoundError)
-    async def not_found_handler(
-        request: Request, exc: ResourceNotFoundError
-    ) -> JSONResponse:
+    async def not_found_handler(request: Request, exc: ResourceNotFoundError) -> JSONResponse:
         return JSONResponse(status_code=404, content={"detail": exc.message})
 
     @app.exception_handler(QuipuBaseError)
-    async def base_error_handler(
-        request: Request, exc: QuipuBaseError
-    ) -> JSONResponse:
+    async def base_error_handler(request: Request, exc: QuipuBaseError) -> JSONResponse:
         return JSONResponse(status_code=500, content={"detail": exc.message})
 
     from fastapi import APIRouter

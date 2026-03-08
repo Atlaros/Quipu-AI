@@ -1,6 +1,6 @@
 # Makefile para Quipu AI
 
-.PHONY: install run-local run-docker stop-docker ngrok clean help
+.PHONY: install run-local run-docker stop-docker ngrok test lint clean help
 
 # Variables
 PORT=8000
@@ -14,6 +14,8 @@ help:
 	@echo "  make run-docker   - Construye y corre el contenedor Docker (puerto $(PORT))"
 	@echo "  make stop-docker  - Detiene el contenedor Docker"
 	@echo "  make ngrok        - Inicia el túnel Ngrok al puerto $(PORT)"
+	@echo "  make test         - Corre el suite completo de tests con coverage"
+	@echo "  make lint         - Ruff lint + format check"
 	@echo "  make clean        - Limpia archivos temporales y caches"
 
 install:
@@ -34,6 +36,13 @@ stop-docker:
 
 ngrok:
 	./ngrok http $(PORT)
+
+test:
+	uv run pytest tests/ -v --cov=app --cov-report=term-missing
+
+lint:
+	uv run ruff check .
+	uv run ruff format --check .
 
 clean:
 	find . -type d -name "__pycache__" -exec rm -rf {} +
